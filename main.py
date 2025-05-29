@@ -17,7 +17,7 @@ app.add_middleware(
 
 uploaded_df = None
 
-def summarize_data():
+def summarize_data(_):
     if uploaded_df is not None:
         return uploaded_df.describe().to_string()
     return "No data uploaded."
