@@ -1,0 +1,6 @@
+fastapi
+langchain
+pandas
+openai
+uvicorn
+python-multipart
