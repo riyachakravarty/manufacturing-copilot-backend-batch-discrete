@@ -1,5 +1,6 @@
 fastapi
 langchain
+langchain-community
 pandas
 openai
 uvicorn
