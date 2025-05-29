@@ -39,7 +39,14 @@ async def upload_csv(file: UploadFile = File(...)):
     uploaded_df = pd.read_csv(io.BytesIO(content))
     return {"message": "File uploaded successfully"}
 
+
+from pydantic import BaseModel
+
+class PromptRequest(BaseModel):
+    prompt: str
+
 @app.post("/chat")
-async def chat(prompt: str):
-    result = agent.run(prompt)
+async def chat(request: PromptRequest):
+    result = agent.run(request.prompt)
     return {"response": result}
+
