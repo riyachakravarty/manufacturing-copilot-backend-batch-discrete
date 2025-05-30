@@ -24,7 +24,7 @@ def summarize_data(_):
         return uploaded_df.describe().to_string()
     return "No data uploaded."
 
-def plot_variability_analysis_combined(uploaded_df, selected_variable):
+def plot_variability_analysis_combined(selected_variable):
     """
     Plot box plot, line plot, and histogram for a given feature column in a combined subplot.
 
