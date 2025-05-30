@@ -35,8 +35,8 @@ def plot_variability_analysis_combined(selected_variable):
     Returns:
     - fig : figure containing plots for variability analysis
     """
-    uploaded_df.set_index('Date_time')
-    uploaded_df.sort_index(inplace=True)
+#    uploaded_df.set_index('Date_time')
+#    uploaded_df.sort_index(inplace=True)
     fig = make_subplots(
         rows=2,
         cols=2,
