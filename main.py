@@ -83,7 +83,7 @@ tools = [
     Tool(
         name="VariabilityAnalysis",
         func=plot_variability_analysis_combined,
-        description="Provides the variability analysis of selected variable in uploaded manufacturing dataset"
+        description="Generates a box/line/histogram plot of a selected variable in the uploaded data. Use format: selected_variable is 'ColumnName'"
     )
 ]
 agent = initialize_agent(tools, llm, agent="zero-shot-react-description", verbose=True)
