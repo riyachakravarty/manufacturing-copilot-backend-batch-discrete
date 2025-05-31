@@ -97,5 +97,9 @@ async def upload_csv(file: UploadFile = File(...)):
 
 @app.post("/chat")
 async def chat(request: PromptRequest):
-    result = agent.run(request.prompt)
+    if "selected_variable" in request.prompt:
+        result = plot_variability_tool(request.prompt)
+    else:
+        result = agent.run(request.prompt)
     return {"response": result}
+
