@@ -62,7 +62,7 @@ def plot_variability_analysis_combined(selected_variable):
     return f"[Image] data:image/png;base64,{encoded}"
 
 def plot_variability_tool(input_text):
-    match = re.search(r"selected_variable is ['\"](.+?)['\"]", input_text)
+    match = re.search(r"selected variable is ['\"](.+?)['\"]", input_text)
     if not match:
         return "Could not find selected variable in prompt."
 
@@ -97,7 +97,7 @@ async def upload_csv(file: UploadFile = File(...)):
 
 @app.post("/chat")
 async def chat(request: PromptRequest):
-    if "selected_variable" in request.prompt:
+    if "selected variable" in request.prompt:
         result = plot_variability_tool(request.prompt)
     else:
         result = agent.run(request.prompt)
