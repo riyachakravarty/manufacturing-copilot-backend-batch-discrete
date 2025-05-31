@@ -7,3 +7,4 @@ uvicorn
 python-multipart
 matplotlib==3.8.4
 plotly==5.22.0
+kaleido
