@@ -168,7 +168,7 @@ tools = [
     ),
     Tool(
         name="MissingValueAnalysis",
-        func=plot_missing_value_overview,
+        func=visualize_missing_data,
         description="Generates missing value analysis plots. Format: selected_variable is 'ColumnName'"
     )
 ]
