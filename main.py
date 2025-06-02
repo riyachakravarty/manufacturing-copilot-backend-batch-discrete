@@ -189,6 +189,8 @@ async def upload_csv(file: UploadFile = File(...)):
 async def chat(request: PromptRequest):
     if "selected variable" in request.prompt:
         result = plot_variability_tool(request.prompt)
+    elif "selected_variable" in request.prompt:
+        result = visualize_missing_data(request.prompt)
     else:
         result = agent.run(request.prompt)
     return {"response": result}
