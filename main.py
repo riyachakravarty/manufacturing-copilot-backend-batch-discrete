@@ -174,20 +174,27 @@ async def upload_csv(file: UploadFile = File(...)):
     uploaded_df['Date_time'] = pd.to_datetime(uploaded_df['Date_time'])
     return {"message": "File uploaded successfully"}
 
+
 @app.post("/chat")
 async def chat(request: PromptRequest):
     prompt_lower = request.prompt.lower()
 
     if "missing value analysis" in prompt_lower and "selected variable" in prompt_lower:
         result = visualize_missing_data(request.prompt)
+        return {"type": "plot", "data": result}
 
     elif "variability analysis" in prompt_lower and "selected variable" in prompt_lower:
         result = plot_variability_tool(request.prompt)
+        try:
+            result_json = json.loads(result)  # Ensure it's valid JSON
+            return {"type": "plot", "data": result_json}
+        except Exception:
+            return {"type": "text", "data": str(result)}
 
     else:
         result = agent.run(request.prompt)
+        return {"type": "text", "data": str(result)}
 
-    return {"response": result}
 
 @app.get("/get_columns")
 def get_columns():
