@@ -181,8 +181,8 @@ async def upload_csv(file: UploadFile = File(...)):
     content = await file.read()
     uploaded_df = pd.read_csv(io.BytesIO(content))
     uploaded_df['Date_time'] = pd.to_datetime(uploaded_df['Date_time'])
-    uploaded_df.set_index('Date_time', inplace=True)
-    uploaded_df.sort_index(inplace=True)
+    #uploaded_df.set_index('Date_time', inplace=True)
+    #uploaded_df.sort_index(inplace=True)
     return {"message": "File uploaded successfully"}
 
 @app.post("/chat")
@@ -195,8 +195,8 @@ async def chat(request: PromptRequest):
         result = agent.run(request.prompt)
     return {"response": result}
 
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+#from fastapi import FastAPI
+#from fastapi.responses import JSONResponse
 
 app = FastAPI()
 
