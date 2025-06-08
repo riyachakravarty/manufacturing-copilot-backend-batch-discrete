@@ -143,7 +143,7 @@ def visualize_missing_data(input_text):
     )
 
     # ✅ Return full HTML so it's interactive & zoomable
-    return fig.to_html(include_plotlyjs='cdn')
+    return fig.to_json()
 
 
 llm = OpenAI(temperature=0, openai_api_key=os.getenv("OPENAI_API_KEY"))
