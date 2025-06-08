@@ -195,3 +195,17 @@ async def chat(request: PromptRequest):
         result = agent.run(request.prompt)
     return {"response": result}
 
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+
+app = FastAPI()
+
+@app.get("/get_columns")
+def get_columns():
+    global uploaded_df
+    if uploaded_df is not None:
+        return JSONResponse(content={"columns": uploaded_df.columns.tolist()})
+    else:
+        return JSONResponse(content={"error": "No file uploaded"}, status_code=400)
+
+
