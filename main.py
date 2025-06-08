@@ -58,9 +58,7 @@ def plot_variability_analysis_combined(selected_variable):
         width=1500
     )
 
-    img_bytes = fig.to_image(format="png")
-    encoded = base64.b64encode(img_bytes).decode('utf-8')
-    return f"[Image] data:image/png;base64,{encoded}"
+    return fig.to_json()
 
 def plot_variability_tool(input_text):
     match = re.search(r"selected variable is ['\"](.+?)['\"]", input_text)
