@@ -11,6 +11,7 @@ import base64
 import re
 from plotly.subplots import make_subplots
 import plotly.graph_objs as go
+import json
 
 app = FastAPI()
 app.add_middleware(
@@ -143,7 +144,7 @@ def visualize_missing_data(input_text):
     )
 
     # ✅ Return full HTML so it's interactive & zoomable
-    return fig.to_json()
+    return json.loads(fig.to_json())
 
 
 llm = OpenAI(temperature=0, openai_api_key=os.getenv("OPENAI_API_KEY"))
