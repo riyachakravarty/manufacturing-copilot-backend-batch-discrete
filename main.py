@@ -105,13 +105,20 @@ def get_missing_intervals(df, col):
     return missing_intervals
     
 
-def visualize_missing_data(selected_variable):
+def visualize_missing_data(prompt):
     global uploaded_df
     time_col = 'Date_time'
 
     if uploaded_df is None:
         return "No data uploaded."
-        
+
+    # ✅ Extract the selected variable from the prompt using regex
+    match = re.search(r"selected_variable\s*is\s*['\"](.+?)['\"]", prompt)
+    if not match:
+        return "Could not extract selected_variable from prompt."
+
+    selected_variable = match.group(1)
+    
     uploaded_df[time_col] = pd.to_datetime(uploaded_df[time_col], errors='coerce')
 
     fig = go.Figure()
@@ -151,7 +158,9 @@ def visualize_missing_data(selected_variable):
         height=600
     )
 
-    fig.show()
+    img_bytes = fig.to_image(format="png")
+    encoded = base64.b64encode(img_bytes).decode('utf-8')
+    return f"[Image] data:image/png;base64,{encoded}"
 
 
 llm = OpenAI(temperature=0, openai_api_key=os.getenv("OPENAI_API_KEY"))
@@ -189,8 +198,8 @@ async def upload_csv(file: UploadFile = File(...)):
 async def chat(request: PromptRequest):
     if "selected variable" in request.prompt:
         result = plot_variability_tool(request.prompt)
-    #elif "selected_variable" in request.prompt:
-        #result = visualize_missing_data(request.prompt)
+    elif "selected_variable" in request.prompt:
+        result = visualize_missing_data(request.prompt)
     else:
         result = agent.run(request.prompt)
     return {"response": result}
