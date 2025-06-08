@@ -92,18 +92,24 @@ def get_missing_intervals(df, col):
 
     return missing_intervals
 
-def visualize_missing_data(selected_variable):
+
+def visualize_missing_data(input_text):
     global uploaded_df
     time_col = 'Date_time'
 
     if uploaded_df is None:
         return "No data uploaded."
-        
+
+    match = re.search(r"selected variable is ['\"](.+?)['\"]", input_text)
+    if not match:
+        return "Could not find selected variable in prompt."
+
+    selected_variable = match.group(1)
+
     uploaded_df[time_col] = pd.to_datetime(uploaded_df[time_col], errors='coerce')
 
     fig = go.Figure()
 
-    # Plot sensor values
     fig.add_trace(go.Scatter(
         x=uploaded_df[time_col],
         y=uploaded_df[selected_variable],
@@ -112,7 +118,6 @@ def visualize_missing_data(selected_variable):
         line=dict(color='blue')
     ))
 
-    # Red bands: missing Date_time intervals
     time_missing_intervals = get_missing_intervals(uploaded_df, time_col)
     for start, end in time_missing_intervals:
         fig.add_vrect(
@@ -121,7 +126,6 @@ def visualize_missing_data(selected_variable):
             annotation_text="Missing Date_time", annotation_position="top left"
         )
 
-    # Orange bands: missing selected_variable intervals
     value_missing_intervals = get_missing_intervals(uploaded_df, selected_variable)
     for start, end in value_missing_intervals:
         fig.add_vrect(
@@ -138,8 +142,8 @@ def visualize_missing_data(selected_variable):
         height=600
     )
 
-    # ✅ Return zoomable HTML
-    return fig.to_html(full_html=False)
+    # ✅ Return full HTML so it's interactive & zoomable
+    return fig.to_html(include_plotlyjs='cdn')
 
 
 llm = OpenAI(temperature=0, openai_api_key=os.getenv("OPENAI_API_KEY"))
