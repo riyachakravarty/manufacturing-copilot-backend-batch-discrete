@@ -198,7 +198,7 @@ async def chat(request: PromptRequest):
 #from fastapi import FastAPI
 #from fastapi.responses import JSONResponse
 
-app = FastAPI()
+#app = FastAPI()
 
 @app.get("/get_columns")
 def get_columns():
