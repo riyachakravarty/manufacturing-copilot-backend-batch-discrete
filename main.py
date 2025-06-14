@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
 from langchain.agents import initialize_agent, Tool
 from langchain.llms import OpenAI
@@ -27,6 +27,11 @@ uploaded_df = None
 class PromptRequest(BaseModel):
     prompt: str
 
+class TreatmentRequest(BaseModel):
+    column: str
+    intervals: list
+    method: str
+
 def summarize_data(_):
     global uploaded_df
     if uploaded_df is not None:
@@ -48,7 +53,7 @@ def plot_variability_analysis_combined(selected_variable):
     )
 
     fig.add_trace(go.Box(y=uploaded_df[selected_variable], name='Box Plot'), row=1, col=1)
-    fig.add_trace(go.Scatter(x=uploaded_df.index, y=uploaded_df[selected_variable], mode='lines', name='Line Plot'), row=1, col=2)
+    fig.add_trace(go.Scatter(x=uploaded_df['Date_time'], y=uploaded_df[selected_variable], mode='lines', name='Line Plot'), row=1, col=2)
     fig.add_trace(go.Histogram(x=uploaded_df[selected_variable], name='Histogram'), row=2, col=1)
 
     fig.update_layout(
@@ -91,11 +96,8 @@ def get_missing_intervals(df, col):
 
     return missing_intervals
 
-
 def visualize_missing_data(input_text):
     global uploaded_df
-    time_col = 'Date_time'
-
     if uploaded_df is None:
         return "No data uploaded."
 
@@ -104,26 +106,15 @@ def visualize_missing_data(input_text):
         return "Could not find selected variable in prompt."
 
     selected_variable = match.group(1)
-
-    uploaded_df[time_col] = pd.to_datetime(uploaded_df[time_col], errors='coerce')
-
     fig = go.Figure()
 
     fig.add_trace(go.Scatter(
-        x=uploaded_df[time_col],
+        x=uploaded_df['Date_time'],
         y=uploaded_df[selected_variable],
         mode='lines+markers',
         name=selected_variable,
         line=dict(color='blue')
     ))
-
-    time_missing_intervals = get_missing_intervals(uploaded_df, time_col)
-    for start, end in time_missing_intervals:
-        fig.add_vrect(
-            x0=start, x1=end,
-            fillcolor="red", opacity=0.3, line_width=0,
-            annotation_text="Missing Date_time", annotation_position="top left"
-        )
 
     value_missing_intervals = get_missing_intervals(uploaded_df, selected_variable)
     for start, end in value_missing_intervals:
@@ -135,15 +126,52 @@ def visualize_missing_data(input_text):
 
     fig.update_layout(
         title=f"Missing Data Visualization: '{selected_variable}' Over Time",
-        xaxis_title=time_col,
+        xaxis_title='Date_time',
         yaxis_title=selected_variable,
         hovermode="x unified",
         height=600
     )
 
-    # ✅ Return full HTML so it's interactive & zoomable
     return json.loads(fig.to_json())
 
+@app.get("/missing_datetime_intervals")
+def missing_datetime_intervals():
+    global uploaded_df
+    if uploaded_df is None:
+        return JSONResponse(content={"error": "No data uploaded"}, status_code=400)
+    intervals = get_missing_intervals(uploaded_df, 'Date_time')
+    formatted = [{"start": str(start), "end": str(end)} for start, end in intervals]
+    return JSONResponse(content={"intervals": formatted})
+
+@app.post("/apply_treatment")
+def apply_treatment(req: TreatmentRequest):
+    global uploaded_df
+    if uploaded_df is None:
+        return JSONResponse(content={"error": "No data uploaded"}, status_code=400)
+
+    for interval in req.intervals:
+        mask = (uploaded_df['Date_time'] >= interval['start']) & (uploaded_df['Date_time'] <= interval['end'])
+
+        if req.method == "Delete rows":
+            uploaded_df = uploaded_df[~mask]
+        elif req.method in ["Forward fill", "Backward fill"]:
+            method = "ffill" if req.method == "Forward fill" else "bfill"
+            uploaded_df.loc[mask, req.column] = uploaded_df[req.column].fillna(method=method)
+        elif req.method == "Mean":
+            mean_val = uploaded_df[req.column].mean()
+            uploaded_df.loc[mask, req.column] = uploaded_df.loc[mask, req.column].fillna(mean_val)
+        elif req.method == "Median":
+            median_val = uploaded_df[req.column].median()
+            uploaded_df.loc[mask, req.column] = uploaded_df.loc[mask, req.column].fillna(median_val)
+
+    return {"message": "Treatment applied successfully."}
+
+@app.get("/download")
+def download():
+    global uploaded_df
+    if uploaded_df is None:
+        return JSONResponse(content={"error": "No data uploaded"}, status_code=400)
+    return JSONResponse(content={"csv": uploaded_df.to_csv(index=False)})
 
 llm = OpenAI(temperature=0, openai_api_key=os.getenv("OPENAI_API_KEY"))
 tools = [
@@ -174,7 +202,6 @@ async def upload_csv(file: UploadFile = File(...)):
     uploaded_df['Date_time'] = pd.to_datetime(uploaded_df['Date_time'])
     return {"message": "File uploaded successfully"}
 
-
 @app.post("/chat")
 async def chat(request: PromptRequest):
     prompt_lower = request.prompt.lower()
@@ -186,7 +213,7 @@ async def chat(request: PromptRequest):
     elif "variability analysis" in prompt_lower and "selected variable" in prompt_lower:
         result = plot_variability_tool(request.prompt)
         try:
-            result_json = json.loads(result)  # Ensure it's valid JSON
+            result_json = json.loads(result)
             return {"type": "plot", "data": result_json}
         except Exception:
             return {"type": "text", "data": str(result)}
@@ -194,7 +221,6 @@ async def chat(request: PromptRequest):
     else:
         result = agent.run(request.prompt)
         return {"type": "text", "data": str(result)}
-
 
 @app.get("/get_columns")
 def get_columns():
