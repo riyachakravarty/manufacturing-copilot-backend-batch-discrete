@@ -13,9 +13,12 @@ from plotly.subplots import make_subplots
 import plotly.graph_objs as go
 import json
 app = FastAPI()
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://manufacturing-copilot-frontendf.vercel.app"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
