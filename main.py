@@ -69,7 +69,7 @@ def get_missing_datetime_intervals(df, datetime_col='Date_time'):
     inferred_freq = pd.infer_freq(df[datetime_col])
     if inferred_freq is None:
         # fallback frequency
-        inferred_freq = '1T'  # 1 minute
+        inferred_freq = '1min'  # 1 minute
 
     full_range = pd.date_range(start=df[datetime_col].min(), end=df[datetime_col].max(), freq=inferred_freq)
     missing_times = full_range.difference(df[datetime_col])
