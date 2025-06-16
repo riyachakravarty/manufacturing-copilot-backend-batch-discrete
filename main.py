@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Query
+from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from langchain.agents import initialize_agent, Tool
 from langchain.llms import OpenAI
@@ -28,9 +28,8 @@ class PromptRequest(BaseModel):
     prompt: str
 
 class TreatmentRequest(BaseModel):
-    column: str
-    intervals: list
-    method: str
+    intervals: list  # list of {start, end}
+    method: str      # e.g., "Mean", "Forward fill", etc.
 
 def summarize_data(_):
     global uploaded_df
@@ -40,7 +39,6 @@ def summarize_data(_):
 
 def plot_variability_analysis_combined(selected_variable):
     global uploaded_df
-
     if uploaded_df is None:
         return "No data uploaded."
 
@@ -69,32 +67,33 @@ def plot_variability_tool(input_text):
     match = re.search(r"selected variable is ['\"](.+?)['\"]", input_text)
     if not match:
         return "Could not find selected variable in prompt."
+    return plot_variability_analysis_combined(match.group(1))
 
-    selected_variable = match.group(1)
-    return plot_variability_analysis_combined(selected_variable)
+def get_all_missing_intervals(df):
+    df = df.sort_values(by='Date_time').reset_index(drop=True)
+    intervals = set()
+    time_series = df['Date_time']
+    sensor_cols = [col for col in df.columns if col != 'Date_time']
 
-def get_missing_intervals(df, col):
-    missing_intervals = []
-    df = df.reset_index(drop=True)
-    in_interval = False
-    start = None
+    for col in sensor_cols:
+        in_gap = False
+        start = None
+        for i in range(len(df)):
+            if pd.isna(df[col].iloc[i]):
+                if not in_gap:
+                    if i > 0:
+                        start = time_series.iloc[i - 1]
+                    in_gap = True
+            elif in_gap:
+                end = time_series.iloc[i]
+                if pd.notna(start) and pd.notna(end):
+                    intervals.add((start, end))
+                in_gap = False
+        if in_gap and start is not None:
+            intervals.add((start, time_series.iloc[-1]))
 
-    for i in range(len(df)):
-        if pd.isna(df[col].iloc[i]):
-            if not in_interval:
-                if i > 0:
-                    start = df['Date_time'].iloc[i - 1]
-                in_interval = True
-        elif in_interval:
-            end = df['Date_time'].iloc[i]
-            if pd.notna(start) and pd.notna(end):
-                missing_intervals.append((start, end))
-            in_interval = False
-
-    if in_interval and start is not None and pd.notna(df['Date_time'].iloc[-1]):
-        missing_intervals.append((start, df['Date_time'].iloc[-1]))
-
-    return missing_intervals
+    sorted_intervals = sorted(intervals)
+    return sorted_intervals
 
 def visualize_missing_data(input_text):
     global uploaded_df
@@ -104,10 +103,9 @@ def visualize_missing_data(input_text):
     match = re.search(r"selected variable is ['\"](.+?)['\"]", input_text)
     if not match:
         return "Could not find selected variable in prompt."
-
     selected_variable = match.group(1)
-    fig = go.Figure()
 
+    fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=uploaded_df['Date_time'],
         y=uploaded_df[selected_variable],
@@ -116,12 +114,12 @@ def visualize_missing_data(input_text):
         line=dict(color='blue')
     ))
 
-    value_missing_intervals = get_missing_intervals(uploaded_df, selected_variable)
-    for start, end in value_missing_intervals:
+    intervals = get_all_missing_intervals(uploaded_df)
+    for start, end in intervals:
         fig.add_vrect(
             x0=start, x1=end,
             fillcolor="orange", opacity=0.3, line_width=0,
-            annotation_text=f"Missing {selected_variable}", annotation_position="top right"
+            annotation_text=f"Missing", annotation_position="top right"
         )
 
     fig.update_layout(
@@ -134,12 +132,29 @@ def visualize_missing_data(input_text):
 
     return json.loads(fig.to_json())
 
+@app.post("/upload")
+async def upload_csv(file: UploadFile = File(...)):
+    global uploaded_df
+    content = await file.read()
+    uploaded_df = pd.read_csv(io.BytesIO(content))
+    uploaded_df['Date_time'] = pd.to_datetime(uploaded_df['Date_time'])
+    return {"message": "File uploaded successfully"}
+
+@app.get("/get_columns")
+def get_columns():
+    global uploaded_df
+    if uploaded_df is not None:
+        sensor_columns = [col for col in uploaded_df.columns if col != 'Date_time']
+        return JSONResponse(content={"columns": sensor_columns})
+    else:
+        return JSONResponse(content={"error": "No file uploaded"}, status_code=400)
+
 @app.get("/missing_datetime_intervals")
 def missing_datetime_intervals():
     global uploaded_df
     if uploaded_df is None:
         return JSONResponse(content={"error": "No data uploaded"}, status_code=400)
-    intervals = get_missing_intervals(uploaded_df, 'Date_time')
+    intervals = get_all_missing_intervals(uploaded_df)
     formatted = [{"start": str(start), "end": str(end)} for start, end in intervals]
     return JSONResponse(content={"intervals": formatted})
 
@@ -149,20 +164,23 @@ def apply_treatment(req: TreatmentRequest):
     if uploaded_df is None:
         return JSONResponse(content={"error": "No data uploaded"}, status_code=400)
 
+    sensor_cols = [col for col in uploaded_df.columns if col != 'Date_time']
+
     for interval in req.intervals:
         mask = (uploaded_df['Date_time'] >= interval['start']) & (uploaded_df['Date_time'] <= interval['end'])
 
         if req.method == "Delete rows":
             uploaded_df = uploaded_df[~mask]
-        elif req.method in ["Forward fill", "Backward fill"]:
-            method = "ffill" if req.method == "Forward fill" else "bfill"
-            uploaded_df.loc[mask, req.column] = uploaded_df[req.column].fillna(method=method)
-        elif req.method == "Mean":
-            mean_val = uploaded_df[req.column].mean()
-            uploaded_df.loc[mask, req.column] = uploaded_df.loc[mask, req.column].fillna(mean_val)
-        elif req.method == "Median":
-            median_val = uploaded_df[req.column].median()
-            uploaded_df.loc[mask, req.column] = uploaded_df.loc[mask, req.column].fillna(median_val)
+        else:
+            for col in sensor_cols:
+                if req.method == "Forward fill":
+                    uploaded_df.loc[mask, col] = uploaded_df[col].fillna(method="ffill")
+                elif req.method == "Backward fill":
+                    uploaded_df.loc[mask, col] = uploaded_df[col].fillna(method="bfill")
+                elif req.method == "Mean":
+                    uploaded_df.loc[mask, col] = uploaded_df.loc[mask, col].fillna(uploaded_df[col].mean())
+                elif req.method == "Median":
+                    uploaded_df.loc[mask, col] = uploaded_df.loc[mask, col].fillna(uploaded_df[col].median())
 
     return {"message": "Treatment applied successfully."}
 
@@ -173,59 +191,32 @@ def download():
         return JSONResponse(content={"error": "No data uploaded"}, status_code=400)
     return JSONResponse(content={"csv": uploaded_df.to_csv(index=False)})
 
+@app.post("/plot_missing")
+async def plot_missing(req: PromptRequest):
+    result = visualize_missing_data(req.prompt)
+    return {"type": "plot", "data": result}
+
 llm = OpenAI(temperature=0, openai_api_key=os.getenv("OPENAI_API_KEY"))
 tools = [
-    Tool(
-        name="SummarizeData",
-        func=summarize_data,
-        description="Summarizes the uploaded manufacturing dataset"
-    ),
-    Tool(
-        name="VariabilityAnalysis",
-        func=plot_variability_tool,
-        description="Generates variability analysis plots. Format: selected variable is 'ColumnName'"
-    ),
-    Tool(
-        name="MissingValueAnalysis",
-        func=visualize_missing_data,
-        description="Generates missing value analysis plots. Format: selected variable is 'ColumnName'"
-    )
+    Tool(name="SummarizeData", func=summarize_data, description="Summarizes the uploaded dataset"),
+    Tool(name="VariabilityAnalysis", func=plot_variability_tool, description="Generates variability plots. Format: selected variable is 'ColumnName'"),
+    Tool(name="MissingValueAnalysis", func=visualize_missing_data, description="Generates missing value plots. Format: selected variable is 'ColumnName'")
 ]
 
 agent = initialize_agent(tools, llm, agent="zero-shot-react-description", verbose=True)
 
-@app.post("/upload")
-async def upload_csv(file: UploadFile = File(...)):
-    global uploaded_df
-    content = await file.read()
-    uploaded_df = pd.read_csv(io.BytesIO(content))
-    uploaded_df['Date_time'] = pd.to_datetime(uploaded_df['Date_time'])
-    return {"message": "File uploaded successfully"}
-
 @app.post("/chat")
 async def chat(request: PromptRequest):
     prompt_lower = request.prompt.lower()
-
     if "missing value analysis" in prompt_lower and "selected variable" in prompt_lower:
         result = visualize_missing_data(request.prompt)
         return {"type": "plot", "data": result}
-
     elif "variability analysis" in prompt_lower and "selected variable" in prompt_lower:
         result = plot_variability_tool(request.prompt)
         try:
-            result_json = json.loads(result)
-            return {"type": "plot", "data": result_json}
+            return {"type": "plot", "data": json.loads(result)}
         except Exception:
             return {"type": "text", "data": str(result)}
-
     else:
         result = agent.run(request.prompt)
         return {"type": "text", "data": str(result)}
-
-@app.get("/get_columns")
-def get_columns():
-    global uploaded_df
-    if uploaded_df is not None:
-        return JSONResponse(content={"columns": uploaded_df.columns.tolist()})
-    else:
-        return JSONResponse(content={"error": "No file uploaded"}, status_code=400)
