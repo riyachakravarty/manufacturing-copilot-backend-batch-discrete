@@ -235,46 +235,43 @@ from fastapi import Request  # Make sure this import is at the top of your file
 @app.post("/chat")
 async def chat(request: Request):
     try:
-        # Print raw request body (for debugging)
+        # Read and print raw request body
         body = await request.body()
-        print(f"Raw request body: {body}")
+        print(f"[DEBUG] Raw request body: {body.decode()}")
 
-        # Parse JSON from request body
-        data = await request.json()
+        # Parse JSON body manually
+        import json
+        data = json.loads(body)
         prompt = data.get("prompt", "")
-        print(f"Parsed prompt: {prompt}")
+        print(f"[DEBUG] Parsed prompt: {prompt}")
     except Exception as e:
-        print(f"Error parsing request JSON: {e}")
-        return {"type": "text", "data": "Invalid request format."}
+        print(f"[ERROR] Failed to parse JSON: {e}")
+        return JSONResponse(content={"type": "text", "data": "Invalid request format."}, status_code=400)
 
+    # Lowercase prompt for keyword checks
     prompt_lower = prompt.lower()
+    print(f"[DEBUG] prompt_lower: {prompt_lower}")
 
-    if "missing value analysis" in prompt_lower or "anomaly analysis" in prompt_lower:
-        try:
+    try:
+        if "missing value analysis" in prompt_lower or "anomaly analysis" in prompt_lower:
+            print("[DEBUG] Entered anomaly analysis block")
             result = visualize_missing_data(prompt)
-            return {"type": "plot", "data": result}
-        except Exception as e:
-            print(f"Error in visualize_missing_data: {e}")
-            return {"type": "text", "data": "Error generating plot."}
+            return JSONResponse(content={"type": "plot", "data": result})
 
-    elif "variability analysis" in prompt_lower:
-        try:
+        elif "variability analysis" in prompt_lower:
+            print("[DEBUG] Entered variability analysis block")
             result = plot_variability_tool(prompt)
             result_json = json.loads(result)
-            return {"type": "plot", "data": result_json}
-        except Exception as e:
-            print(f"Error in plot_variability_tool: {e}")
-            return {"type": "text", "data": str(result)}
+            return JSONResponse(content={"type": "plot", "data": result_json})
 
-    else:
-        try:
+        else:
+            print("[DEBUG] Entered fallback agent block")
             result = agent.run(prompt)
-            return {"type": "text", "data": str(result)}
-        except Exception as e:
-            print(f"Error in agent run: {e}")
-            return {"type": "text", "data": "Error processing request."}
+            return JSONResponse(content={"type": "text", "data": str(result)})
 
-
+    except Exception as e:
+        print(f"[ERROR] Processing failed: {e}")
+        return JSONResponse(content={"type": "text", "data": "Internal error occurred."}, status_code=500)
 
 @app.get("/get_columns")
 def get_columns():
