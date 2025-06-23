@@ -225,10 +225,13 @@ agent = initialize_agent(tools, llm, agent="zero-shot-react-description", verbos
 @app.post("/upload")
 async def upload_csv(file: UploadFile = File(...)):
     global uploaded_df
-    content = await file.read()
-    uploaded_df = pd.read_csv(io.BytesIO(content))
-    uploaded_df['Date_time'] = pd.to_datetime(uploaded_df['Date_time'])
-    return {"message": "File uploaded successfully"}
+    try:
+        content = await file.read()
+        uploaded_df = pd.read_csv(io.BytesIO(content))
+        uploaded_df['Date_time'] = pd.to_datetime(uploaded_df['Date_time'])
+        return JSONResponse(content={"message": "File uploaded successfully"})
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
 @app.post("/chat")
 async def chat(request: PromptRequest):
     prompt_lower = request.prompt.lower()
