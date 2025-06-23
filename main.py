@@ -20,7 +20,7 @@ app.add_middleware(
         "https://manufacturing-copilot-frontendf.vercel.app"
     ],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 uploaded_df = None
