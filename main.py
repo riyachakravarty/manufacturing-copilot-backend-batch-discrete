@@ -99,24 +99,76 @@ def get_missing_value_intervals(df, column, datetime_col='Date_time'):
 
 def visualize_missing_data(input_text):
     global uploaded_df
-    if uploaded_df is None:
-        raise ValueError("No data uploaded.")
-    match = re.search(r"selected variable is ['\"](.+?)['\"]", input_text)
-    if not match:
-        raise ValueError("Could not find selected variable in prompt.")
+    print("[DEBUG] visualize_missing_data() called")
 
-    selected_variable = match.group(1)
-    if selected_variable not in uploaded_df.columns:
-        raise ValueError(f"Column '{selected_variable}' not found in data.")
+    try:
+        if uploaded_df is None:
+            print("[ERROR] No uploaded_df found.")
+            return "No data uploaded."
 
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=uploaded_df['Date_time'], y=uploaded_df[selected_variable], mode='lines+markers', name=selected_variable, line=dict(color='blue')))
-    for start, end in get_missing_value_intervals(uploaded_df, selected_variable):
-        fig.add_vrect(x0=start, x1=end, fillcolor="orange", opacity=0.3, line_width=0, annotation_text="Missing value", annotation_position="top left")
-    for start, end in get_missing_datetime_intervals(uploaded_df, 'Date_time'):
-        fig.add_vrect(x0=start, x1=end, fillcolor="red", opacity=0.2, line_width=0, annotation_text="Missing datetime", annotation_position="top right")
-    fig.update_layout(title=f"Missing Data Visualization: '{selected_variable}' Over Time", xaxis_title='Date_time', yaxis_title=selected_variable, hovermode="x unified", height=600)
-    return json.loads(fig.to_json())
+        match = re.search(r"selected variable is ['\"](.+?)['\"]", input_text)
+        if not match:
+            print("[ERROR] Could not extract variable from prompt.")
+            return "Could not find selected variable in prompt."
+
+        selected_variable = match.group(1)
+        print(f"[DEBUG] Selected variable: {selected_variable}")
+
+        if selected_variable not in uploaded_df.columns:
+            print(f"[ERROR] Column '{selected_variable}' not found in dataframe.")
+            return f"Column '{selected_variable}' not in dataframe."
+
+        if 'Date_time' not in uploaded_df.columns:
+            print("[ERROR] 'Date_time' column not found.")
+            return "'Date_time' column missing in uploaded data."
+
+        fig = go.Figure()
+
+        # Plot actual data
+        fig.add_trace(go.Scatter(
+            x=uploaded_df['Date_time'],
+            y=uploaded_df[selected_variable],
+            mode='lines+markers',
+            name=selected_variable,
+            line=dict(color='blue')
+        ))
+
+        # Highlight Missing Values in Selected Variable
+        print("[DEBUG] Calculating missing value intervals...")
+        missing_val_intervals = get_missing_value_intervals(uploaded_df, selected_variable)
+        print(f"[DEBUG] Found {len(missing_val_intervals)} missing value intervals.")
+        for start, end in missing_val_intervals:
+            fig.add_vrect(
+                x0=start, x1=end,
+                fillcolor="orange", opacity=0.3, line_width=0,
+                annotation_text="Missing value", annotation_position="top left"
+            )
+
+        # Highlight Missing Timestamps (Datetime Gaps)
+        print("[DEBUG] Calculating missing datetime intervals...")
+        missing_dt_intervals = get_missing_datetime_intervals(uploaded_df, 'Date_time')
+        print(f"[DEBUG] Found {len(missing_dt_intervals)} missing datetime intervals.")
+        for start, end in missing_dt_intervals:
+            fig.add_vrect(
+                x0=start, x1=end,
+                fillcolor="red", opacity=0.2, line_width=0,
+                annotation_text="Missing datetime", annotation_position="top right"
+            )
+
+        fig.update_layout(
+            title=f"Missing Data Visualization: '{selected_variable}' Over Time",
+            xaxis_title='Date_time',
+            yaxis_title=selected_variable,
+            hovermode="x unified",
+            height=600
+        )
+
+        print("[DEBUG] Finished creating figure.")
+        return json.loads(fig.to_json())
+
+    except Exception as e:
+        print(f"[ERROR] visualize_missing_data() failed: {e}")
+        return "Error generating missing data plot."
 
 @app.get("/missing_datetime_intervals")
 def missing_datetime_intervals():
