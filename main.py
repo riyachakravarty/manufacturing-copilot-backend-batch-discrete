@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Query
+from fastapi import FastAPI, UploadFile, File, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from langchain.agents import initialize_agent, Tool
 from langchain.llms import OpenAI
@@ -230,30 +230,50 @@ async def upload_csv(file: UploadFile = File(...)):
         return JSONResponse(content={"message": "File uploaded successfully"})
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
+from fastapi import Request  # Make sure this import is at the top of your file
+
 @app.post("/chat")
-async def chat(request: PromptRequest):
-    print(f"Received prompt: {request.prompt}")
-    prompt_lower = request.prompt.lower()
+async def chat(request: Request):
+    try:
+        # Print raw request body (for debugging)
+        body = await request.body()
+        print(f"Raw request body: {body}")
+
+        # Parse JSON from request body
+        data = await request.json()
+        prompt = data.get("prompt", "")
+        print(f"Parsed prompt: {prompt}")
+    except Exception as e:
+        print(f"Error parsing request JSON: {e}")
+        return {"type": "text", "data": "Invalid request format."}
+
+    prompt_lower = prompt.lower()
 
     if "missing value analysis" in prompt_lower or "anomaly analysis" in prompt_lower:
         try:
-            result = visualize_missing_data(request.prompt)
+            result = visualize_missing_data(prompt)
             return {"type": "plot", "data": result}
         except Exception as e:
             print(f"Error in visualize_missing_data: {e}")
             return {"type": "text", "data": "Error generating plot."}
 
     elif "variability analysis" in prompt_lower:
-        result = plot_variability_tool(request.prompt)
         try:
+            result = plot_variability_tool(prompt)
             result_json = json.loads(result)
             return {"type": "plot", "data": result_json}
-        except Exception:
+        except Exception as e:
+            print(f"Error in plot_variability_tool: {e}")
             return {"type": "text", "data": str(result)}
 
     else:
-        result = agent.run(request.prompt)
-        return {"type": "text", "data": str(result)}
+        try:
+            result = agent.run(prompt)
+            return {"type": "text", "data": str(result)}
+        except Exception as e:
+            print(f"Error in agent run: {e}")
+            return {"type": "text", "data": "Error processing request."}
+
 
 
 @app.get("/get_columns")
