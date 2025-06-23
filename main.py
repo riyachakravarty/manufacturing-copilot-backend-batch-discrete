@@ -233,9 +233,14 @@ async def upload_csv(file: UploadFile = File(...)):
 @app.post("/chat")
 async def chat(request: PromptRequest):
     prompt_lower = request.prompt.lower()
-    if "missing value analysis" in prompt_lower and "selected variable" in prompt_lower:
+
+    if (
+        ("missing value analysis" in prompt_lower or "anomaly analysis" in prompt_lower)
+        and "selected variable" in prompt_lower
+    ):
         result = visualize_missing_data(request.prompt)
         return {"type": "plot", "data": result}
+
     elif "variability analysis" in prompt_lower and "selected variable" in prompt_lower:
         result = plot_variability_tool(request.prompt)
         try:
@@ -243,9 +248,11 @@ async def chat(request: PromptRequest):
             return {"type": "plot", "data": result_json}
         except Exception:
             return {"type": "text", "data": str(result)}
+
     else:
         result = agent.run(request.prompt)
         return {"type": "text", "data": str(result)}
+
 @app.get("/get_columns")
 def get_columns():
     global uploaded_df
