@@ -235,24 +235,25 @@ async def chat(request: PromptRequest):
     print(f"Received prompt: {request.prompt}")
     prompt_lower = request.prompt.lower()
 
-    try:
-        if "anomaly analysis" in prompt_lower or "missing value analysis" in prompt_lower:
-            print("Triggering anomaly analysis")
+    if "missing value analysis" in prompt_lower or "anomaly analysis" in prompt_lower:
+        try:
             result = visualize_missing_data(request.prompt)
             return {"type": "plot", "data": result}
+        except Exception as e:
+            print(f"Error in visualize_missing_data: {e}")
+            return {"type": "text", "data": "Error generating plot."}
 
-        elif "variability analysis" in prompt_lower:
-            print("Triggering variability analysis")
-            result = plot_variability_tool(request.prompt)
-            return {"type": "plot", "data": json.loads(result)}
-
-        else:
-            print("Triggering agent")
-            result = agent.run(request.prompt)
+    elif "variability analysis" in prompt_lower:
+        result = plot_variability_tool(request.prompt)
+        try:
+            result_json = json.loads(result)
+            return {"type": "plot", "data": result_json}
+        except Exception:
             return {"type": "text", "data": str(result)}
-    except Exception as e:
-        print(f"Error in /chat: {e}")
-        return {"type": "text", "data": f"Error: {e}"}
+
+    else:
+        result = agent.run(request.prompt)
+        return {"type": "text", "data": str(result)}
 
 
 @app.get("/get_columns")
