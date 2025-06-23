@@ -232,26 +232,28 @@ async def upload_csv(file: UploadFile = File(...)):
         return JSONResponse(content={"error": str(e)}, status_code=500)
 @app.post("/chat")
 async def chat(request: PromptRequest):
+    print(f"Received prompt: {request.prompt}")
     prompt_lower = request.prompt.lower()
 
-    if (
-        ("missing value analysis" in prompt_lower or "anomaly analysis" in prompt_lower)
-        and "selected variable" in prompt_lower
-    ):
-        result = visualize_missing_data(request.prompt)
-        return {"type": "plot", "data": result}
+    try:
+        if "anomaly analysis" in prompt_lower or "missing value analysis" in prompt_lower:
+            print("Triggering anomaly analysis")
+            result = visualize_missing_data(request.prompt)
+            return {"type": "plot", "data": result}
 
-    elif "variability analysis" in prompt_lower and "selected variable" in prompt_lower:
-        result = plot_variability_tool(request.prompt)
-        try:
-            result_json = json.loads(result)
-            return {"type": "plot", "data": result_json}
-        except Exception:
+        elif "variability analysis" in prompt_lower:
+            print("Triggering variability analysis")
+            result = plot_variability_tool(request.prompt)
+            return {"type": "plot", "data": json.loads(result)}
+
+        else:
+            print("Triggering agent")
+            result = agent.run(request.prompt)
             return {"type": "text", "data": str(result)}
+    except Exception as e:
+        print(f"Error in /chat: {e}")
+        return {"type": "text", "data": f"Error: {e}"}
 
-    else:
-        result = agent.run(request.prompt)
-        return {"type": "text", "data": str(result)}
 
 @app.get("/get_columns")
 def get_columns():
