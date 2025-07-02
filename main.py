@@ -134,26 +134,26 @@ def visualize_missing_data(input_text):
         ))
 
         # Highlight Missing Values in Selected Variable
-        print("[DEBUG] Calculating missing value intervals...")
-        missing_val_intervals = get_missing_value_intervals(uploaded_df, selected_variable)
-        print(f"[DEBUG] Found {len(missing_val_intervals)} missing value intervals.")
-        for start, end in missing_val_intervals:
-            fig.add_vrect(
-                x0=start, x1=end,
-                fillcolor="orange", opacity=0.3, line_width=0,
-                annotation_text="Missing value", annotation_position="top left"
-            )
+        #print("[DEBUG] Calculating missing value intervals...")
+        #missing_val_intervals = get_missing_value_intervals(uploaded_df, selected_variable)
+        #print(f"[DEBUG] Found {len(missing_val_intervals)} missing value intervals.")
+        #for start, end in missing_val_intervals:
+         #   fig.add_vrect(
+          #      x0=start, x1=end,
+           #     fillcolor="orange", opacity=0.3, line_width=0,
+            #    annotation_text="Missing value", annotation_position="top left"
+            #)
 
         # Highlight Missing Timestamps (Datetime Gaps)
-        print("[DEBUG] Calculating missing datetime intervals...")
-        missing_dt_intervals = get_missing_datetime_intervals(uploaded_df, 'Date_time')
-        print(f"[DEBUG] Found {len(missing_dt_intervals)} missing datetime intervals.")
-        for start, end in missing_dt_intervals:
-            fig.add_vrect(
-                x0=start, x1=end,
-                fillcolor="red", opacity=0.2, line_width=0,
-                annotation_text="Missing datetime", annotation_position="top right"
-            )
+        #print("[DEBUG] Calculating missing datetime intervals...")
+        #missing_dt_intervals = get_missing_datetime_intervals(uploaded_df, 'Date_time')
+        #print(f"[DEBUG] Found {len(missing_dt_intervals)} missing datetime intervals.")
+        #for start, end in missing_dt_intervals:
+         #   fig.add_vrect(
+          #      x0=start, x1=end,
+           #     fillcolor="red", opacity=0.2, line_width=0,
+            #    annotation_text="Missing datetime", annotation_position="top right"
+            #)
 
         fig.update_layout(
             title=f"Missing Data Visualization: '{selected_variable}' Over Time",
