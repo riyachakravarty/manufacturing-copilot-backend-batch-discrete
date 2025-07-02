@@ -144,7 +144,7 @@ def visualize_missing_data(input_text):
                 annotation_text="Missing value", annotation_position="top left"
             )
 
-         Highlight Missing Timestamps (Datetime Gaps)
+        #Highlight Missing Timestamps (Datetime Gaps)
         print("[DEBUG] Calculating missing datetime intervals...")
         missing_dt_intervals = get_missing_datetime_intervals(uploaded_df, 'Date_time')
         print(f"[DEBUG] Found {len(missing_dt_intervals)} missing datetime intervals.")
