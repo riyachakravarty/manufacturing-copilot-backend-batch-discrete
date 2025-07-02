@@ -164,7 +164,7 @@ def visualize_missing_data(input_text):
         )
 
         print("[DEBUG] Finished creating figure.")
-        return json.loads(fig.to_json())
+        return fig.to_json()
 
     except Exception as e:
         print(f"[ERROR] visualize_missing_data() failed: {e}")
@@ -245,7 +245,7 @@ async def chat(request: Request):
     try:
         if "missing value analysis" in prompt_lower or "anomaly analysis" in prompt_lower:
             result = visualize_missing_data(prompt)
-            return JSONResponse(content={"type": "plot", "data": result})
+            return JSONResponse(content={"type": "plot", "data": json.loads(result)})
         elif "variability analysis" in prompt_lower:
             result = plot_variability_tool(prompt)
             return JSONResponse(content={"type": "plot", "data": json.loads(result)})
