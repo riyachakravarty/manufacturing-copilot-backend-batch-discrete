@@ -140,8 +140,8 @@ def visualize_missing_data(input_text):
         for start, end in missing_val_intervals:
             fig.add_vrect(
                 x0=start, x1=end,
-                fillcolor="orange", opacity=0.3, line_width=0,
-                annotation_text="Missing value", annotation_position="top left"
+                fillcolor="orange", opacity=0.3, line_width=0
+                #annotation_text="Missing value", annotation_position="top left"
             )
 
         #Highlight Missing Timestamps (Datetime Gaps)
