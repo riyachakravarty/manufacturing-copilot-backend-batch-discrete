@@ -63,7 +63,11 @@ def get_missing_datetime_intervals(df, datetime_col='Date_time'):
     if datetime_col not in df.columns:
         return []
     df = df.sort_values(by=datetime_col).reset_index(drop=True)
-    inferred_freq = pd.infer_freq(df[datetime_col]) or '1min'
+    inferred_freq = pd.infer_freq(df[datetime_col])
+    if inferred_freq is None:
+        diffs = df[datetime_col].diff().dropna()
+        most_common_diff = diffs.mode()[0] if not diffs.empty else pd.Timedelta(hours=1)
+        inferred_freq = most_common_diff
     full_range = pd.date_range(start=df[datetime_col].min(), end=df[datetime_col].max(), freq=inferred_freq)
     missing_times = full_range.difference(df[datetime_col])
 
