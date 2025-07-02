@@ -150,9 +150,9 @@ def visualize_missing_data(input_text):
         print(f"[DEBUG] Found {len(missing_dt_intervals)} missing datetime intervals.")
         for start, end in missing_dt_intervals:
             fig.add_vrect(
-                x0=start, x1=end,
+                x0=str(start), x1=str(end),
                 fillcolor="red", opacity=0.2, line_width=0,
-                annotation_text="Missing datetime", annotation_position="top right"
+                #annotation_text="Missing datetime", annotation_position="top right"
             )
 
         fig.update_layout(
