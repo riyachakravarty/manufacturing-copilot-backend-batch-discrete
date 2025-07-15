@@ -174,6 +174,62 @@ def visualize_missing_data(input_text):
         print(f"[ERROR] visualize_missing_data() failed: {e}")
         return "Error generating missing data plot."
 
+
+def visualize_outlier_data(prompt):
+    global uploaded_df
+
+    if uploaded_df is None:
+        return "No data uploaded."
+
+    # Extract column name
+    column_match = re.search(r"selected variable is ['\"](.+?)['\"]", prompt)
+    if not column_match:
+        return "Could not extract column from prompt."
+    column = column_match.group(1)
+
+    # Extract method
+    method = "zscore"  # default
+    if "iqr" in prompt.lower():
+        method = "iqr"
+    elif "zscore" in prompt.lower() or "z-score" in prompt.lower():
+        method = "zscore"
+
+    if column not in uploaded_df.columns:
+        return f"Column '{column}' not found in data."
+    if 'Date_time' not in uploaded_df.columns:
+        return "'Date_time' column is missing."
+
+    try:
+        intervals = get_outlier_intervals(uploaded_df, column, method=method)
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=uploaded_df['Date_time'],
+            y=uploaded_df[column],
+            mode='lines+markers',
+            name=column,
+            line=dict(color='blue')
+        ))
+
+        for start, end in intervals:
+            fig.add_vrect(
+                x0=start, x1=end,
+                fillcolor="purple", opacity=0.3, line_width=0,
+            )
+
+        fig.update_layout(
+            title=f"Outlier Analysis ({method.upper()}): '{column}'",
+            xaxis_title='Date_time',
+            yaxis_title=column,
+            hovermode="x unified",
+            height=600
+        )
+
+        return fig.to_json()
+    except Exception as e:
+        return f"Error generating outlier plot: {e}"
+        
+
 @app.get("/missing_datetime_intervals")
 def missing_datetime_intervals():
     global uploaded_df
