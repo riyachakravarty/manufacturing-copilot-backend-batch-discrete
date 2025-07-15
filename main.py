@@ -174,7 +174,42 @@ def visualize_missing_data(input_text):
         print(f"[ERROR] visualize_missing_data() failed: {e}")
         return "Error generating missing data plot."
 
+def get_outlier_intervals(df, column, datetime_col='Date_time', method='zscore', threshold=3):
+    outlier_intervals = []
+    df = df.sort_values(by=datetime_col).reset_index(drop=True)
 
+    if method == 'zscore':
+        from scipy.stats import zscore
+        df['zscore'] = zscore(df[column].dropna())
+        df['is_outlier'] = df['zscore'].abs() > threshold
+    elif method == 'iqr':
+        Q1 = df[column].quantile(0.25)
+        Q3 = df[column].quantile(0.75)
+        IQR = Q3 - Q1.0
+        lower = Q1 - 1.5 * IQR
+        upper = Q3 + 1.5 * IQR
+        df['is_outlier'] = (df[column] < lower) | (df[column] > upper)
+    else:
+        raise ValueError("Unsupported method")
+
+    # Convert boolean mask into datetime intervals
+    in_interval = False
+    start = None
+    for i in range(len(df)):
+        if df['is_outlier'].iloc[i]:
+            if not in_interval:
+                start = df[datetime_col].iloc[i]
+                in_interval = True
+        elif in_interval:
+            end = df[datetime_col].iloc[i]
+            outlier_intervals.append((start, end))
+            in_interval = False
+    if in_interval:
+        outlier_intervals.append((start, df[datetime_col].iloc[-1]))
+
+    df.drop(columns=['zscore', 'is_outlier'], errors='ignore', inplace=True)
+    return outlier_intervals
+    
 def visualize_outlier_data(prompt):
     global uploaded_df
 
