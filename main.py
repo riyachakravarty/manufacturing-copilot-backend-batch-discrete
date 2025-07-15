@@ -250,6 +250,9 @@ async def chat(request: Request):
         if "missing value analysis" in prompt_lower or "anomaly analysis" in prompt_lower:
             result = visualize_missing_data(prompt)
             return JSONResponse(content={"type": "plot", "data": json.loads(result)})
+        elif "outlier analysis" in prompt_lower:
+            result = visualize_outlier_data(prompt)
+            return JSONResponse(content={"type": "plot", "data": json.loads(result)})
         elif "variability analysis" in prompt_lower:
             result = plot_variability_tool(prompt)
             return JSONResponse(content={"type": "plot", "data": json.loads(result)})
