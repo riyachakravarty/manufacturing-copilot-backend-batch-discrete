@@ -326,14 +326,27 @@ def apply_treatment(payload: dict):
 
 @app.get("/download")
 def download_file():
-    if uploaded_df is None:
-        return "No data available"
-    csv = uploaded_df.to_csv(index=False)
-    return StreamingResponse(
-        iter([csv]),
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=treated_file.csv"}
-    )
+    global uploaded_df, augmented_df
+
+    if augmented_df is not None:
+        df_to_download = augmented_df
+    elif uploaded_df is not None:
+        df_to_download = uploaded_df
+    else:
+        return JSONResponse(content={"message": "No data available for download"}, status_code=400)
+
+    try:
+        stream = StringIO()
+        df_to_download.to_csv(stream, index=False)
+        stream.seek(0)
+        return StreamingResponse(
+            stream,
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=treated_data.csv"}
+        )
+    except Exception as e:
+        return JSONResponse(content={"message": f"Download failed: {str(e)}"}, status_code=500)
+
 
 @app.post("/upload")
 async def upload_csv(file: UploadFile = File(...)):
