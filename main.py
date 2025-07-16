@@ -24,6 +24,7 @@ app.add_middleware(
 )
 
 uploaded_df = None
+augmented_df = None  # holds datetime-augmented version for treatment
 
 class PromptRequest(BaseModel):
     prompt: str
@@ -284,22 +285,44 @@ def get_columns():
         return JSONResponse(content={"error": "No file uploaded"}, status_code=400)
 
 @app.post("/apply_treatment")
-def apply_treatment(req: TreatmentRequest):
-    global uploaded_df
-    if uploaded_df is None:
-        return JSONResponse(content={"error": "No data uploaded"}, status_code=400)
-    for interval in req.intervals:
-        mask = (uploaded_df['Date_time'] >= interval['start']) & (uploaded_df['Date_time'] <= interval['end'])
-        if req.method == "Delete rows":
-            uploaded_df = uploaded_df[~mask]
-        elif req.method in ["Forward fill", "Backward fill"]:
-            method = "ffill" if req.method == "Forward fill" else "bfill"
-            uploaded_df.loc[mask, req.column] = uploaded_df[req.column].fillna(method=method)
-        elif req.method == "Mean":
-            uploaded_df.loc[mask, req.column] = uploaded_df.loc[mask, req.column].fillna(uploaded_df[req.column].mean())
-        elif req.method == "Median":
-            uploaded_df.loc[mask, req.column] = uploaded_df.loc[mask, req.column].fillna(uploaded_df[req.column].median())
-    return {"message": "Treatment applied successfully."}
+def apply_treatment(payload: dict):
+    global uploaded_df, augmented_df
+    column = payload.get("column")
+    intervals = payload.get("intervals", [])
+    method = payload.get("method")
+
+    # Step 1: Augment uploaded_df with full datetime range if not already done
+    if augmented_df is None:
+        df = uploaded_df.sort_values('Date_time').reset_index(drop=True)
+        inferred_freq = pd.infer_freq(df['Date_time'])
+        if inferred_freq is None:
+            diffs = df['Date_time'].diff().dropna()
+            most_common_diff = diffs.mode()[0] if not diffs.empty else pd.Timedelta(hours=1)
+            inferred_freq = most_common_diff
+        full_range = pd.date_range(start=df['Date_time'].min(), end=df['Date_time'].max(), freq=inferred_freq)
+        full_df = pd.DataFrame({'Date_time': full_range})
+        augmented_df = pd.merge(full_df, df, on='Date_time', how='left')
+
+    for interval in intervals:
+        start = pd.to_datetime(interval['start'])
+        end = pd.to_datetime(interval['end'])
+        mask = (augmented_df['Date_time'] >= start) & (augmented_df['Date_time'] <= end)
+
+        if method == "Delete rows":
+            augmented_df = augmented_df[~mask]
+        elif method == "Forward fill":
+            augmented_df.loc[mask, column] = augmented_df[column].ffill()
+        elif method == "Backward fill":
+            augmented_df.loc[mask, column] = augmented_df[column].bfill()
+        elif method == "Mean":
+            mean_val = augmented_df[column].mean()
+            augmented_df.loc[mask, column] = mean_val
+        elif method == "Median":
+            median_val = augmented_df[column].median()
+            augmented_df.loc[mask, column] = median_val
+
+    return {"message": "Treatment applied successfully"}
+
 
 @app.get("/download")
 def download_file():
@@ -319,6 +342,7 @@ async def upload_csv(file: UploadFile = File(...)):
         content = await file.read()
         uploaded_df = pd.read_csv(io.BytesIO(content))
         uploaded_df['Date_time'] = pd.to_datetime(uploaded_df['Date_time'])
+        augmented_df = None  # reset for new file
         return JSONResponse(content={"message": "File uploaded successfully"})
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
