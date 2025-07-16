@@ -301,11 +301,15 @@ def apply_treatment(req: TreatmentRequest):
     return {"message": "Treatment applied successfully."}
 
 @app.get("/download")
-def download():
-    global uploaded_df
+def download_file():
     if uploaded_df is None:
-        return JSONResponse(content={"error": "No data uploaded"}, status_code=400)
-    return JSONResponse(content={"csv": uploaded_df.to_csv(index=False)})
+        return "No data available"
+    csv = uploaded_df.to_csv(index=False)
+    return StreamingResponse(
+        iter([csv]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=treated_file.csv"}
+    )
 
 @app.post("/upload")
 async def upload_csv(file: UploadFile = File(...)):
