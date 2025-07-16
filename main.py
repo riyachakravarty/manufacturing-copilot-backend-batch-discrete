@@ -5,6 +5,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import pandas as pd
 import io
+from io import StringIO
 import os
 import re
 import json
