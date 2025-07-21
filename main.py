@@ -288,11 +288,9 @@ def get_columns():
 @app.post("/apply_treatment")
 def apply_treatment(payload: dict):
     global uploaded_df, augmented_df
-
-    columns = payload.get("columns", [])  # <-- Accepts multiple columns
+    column = payload.get("column")
     intervals = payload.get("intervals", [])
     method = payload.get("method")
-
     # Step 1: Augment uploaded_df with full datetime range if not already done
     if augmented_df is None:
         df = uploaded_df.sort_values('Date_time').reset_index(drop=True)
@@ -304,30 +302,24 @@ def apply_treatment(payload: dict):
         full_range = pd.date_range(start=df['Date_time'].min(), end=df['Date_time'].max(), freq=inferred_freq)
         full_df = pd.DataFrame({'Date_time': full_range})
         augmented_df = pd.merge(full_df, df, on='Date_time', how='left')
-
-    # Step 2: Apply treatment to each column and interval
     for interval in intervals:
         start = pd.to_datetime(interval['start'])
         end = pd.to_datetime(interval['end'])
         mask = (augmented_df['Date_time'] >= start) & (augmented_df['Date_time'] <= end)
-
-        for column in columns:
-            if method == "Delete rows":
-                augmented_df = augmented_df[~mask]
-                break  # After deleting rows, no further treatment needed
-            elif method == "Forward fill":
-                augmented_df.loc[mask, column] = augmented_df[column].ffill()
-            elif method == "Backward fill":
-                augmented_df.loc[mask, column] = augmented_df[column].bfill()
-            elif method == "Mean":
-                mean_val = augmented_df[column].mean()
-                augmented_df.loc[mask, column] = mean_val
-            elif method == "Median":
-                median_val = augmented_df[column].median()
-                augmented_df.loc[mask, column] = median_val
-
+        if method == "Delete rows":
+            augmented_df = augmented_df[~mask]
+        elif method == "Forward fill":
+            augmented_df.loc[mask, column] = augmented_df[column].ffill()
+        elif method == "Backward fill":
+            augmented_df.loc[mask, column] = augmented_df[column].bfill()
+        elif method == "Mean":
+            mean_val = augmented_df[column].mean()
+            augmented_df.loc[mask, column] = mean_val
+        elif method == "Median":
+            median_val = augmented_df[column].median()
+            augmented_df.loc[mask, column] = median_val
     return {"message": "Treatment applied successfully"}
-
+    
 @app.get("/download")
 def download_file():
     global uploaded_df, augmented_df
