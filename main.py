@@ -13,6 +13,7 @@ from plotly.subplots import make_subplots
 import plotly.graph_objs as go
 from langchain.agents import initialize_agent, Tool
 from langchain.llms import OpenAI
+from typing import List
 
 app = FastAPI()
 
@@ -30,10 +31,15 @@ augmented_df = None  # holds datetime-augmented version for treatment
 class PromptRequest(BaseModel):
     prompt: str
 
+class Interval(BaseModel):
+    start: str
+    end: str
+
 class TreatmentRequest(BaseModel):
-    column: str
-    intervals: list
+    columns: List[str]
+    intervals: List[Interval]
     method: str
+
 
 def summarize_data(_):
     global uploaded_df
@@ -288,7 +294,8 @@ def get_columns():
 @app.post("/apply_treatment")
 def apply_treatment(payload: dict):
     global uploaded_df, augmented_df
-    column = payload.get("column")
+
+    columns = payload.get("columns", [])
     intervals = payload.get("intervals", [])
     method = payload.get("method")
     # Step 1: Augment uploaded_df with full datetime range if not already done
@@ -306,18 +313,22 @@ def apply_treatment(payload: dict):
         start = pd.to_datetime(interval['start'])
         end = pd.to_datetime(interval['end'])
         mask = (augmented_df['Date_time'] >= start) & (augmented_df['Date_time'] <= end)
-        if method == "Delete rows":
-            augmented_df = augmented_df[~mask]
-        elif method == "Forward fill":
-            augmented_df.loc[mask, column] = augmented_df[column].ffill()
-        elif method == "Backward fill":
-            augmented_df.loc[mask, column] = augmented_df[column].bfill()
-        elif method == "Mean":
-            mean_val = augmented_df[column].mean()
-            augmented_df.loc[mask, column] = mean_val
-        elif method == "Median":
-            median_val = augmented_df[column].median()
-            augmented_df.loc[mask, column] = median_val
+        for column in columns:
+            if column not in augmented_df.columns:
+                continue  # skip invalid columns
+
+            if method == "Delete rows":
+                augmented_df = augmented_df[~mask]
+            elif method == "Forward fill":
+                augmented_df.loc[mask, column] = augmented_df[column].ffill()
+            elif method == "Backward fill":
+                augmented_df.loc[mask, column] = augmented_df[column].bfill()
+            elif method == "Mean":
+                mean_val = augmented_df[column].mean()
+                augmented_df.loc[mask, column] = mean_val
+            elif method == "Median":
+                median_val = augmented_df[column].median()
+                augmented_df.loc[mask, column] = median_val
     return {"message": "Treatment applied successfully"}
     
 @app.get("/download")
