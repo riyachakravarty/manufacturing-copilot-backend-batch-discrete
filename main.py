@@ -276,6 +276,8 @@ agent = initialize_agent(tools, llm, agent="zero-shot-react-description", verbos
 
 @app.post("/chat")
 async def chat(request: Request):
+    global uploaded_df, augmented_df
+
     try:
         body = await request.body()
         data = json.loads(body)
@@ -288,14 +290,24 @@ async def chat(request: Request):
         if "missing value analysis" in prompt_lower or "anomaly analysis" in prompt_lower:
             result = visualize_missing_data(prompt)
             return JSONResponse(content={"type": "plot", "data": json.loads(result)})
+
         elif "outlier analysis" in prompt_lower:
-            result = visualize_outlier_data(prompt)
+            # Use augmented_df if treatment has been applied, else fallback to uploaded_df
+            df = augmented_df if augmented_df is not None else uploaded_df
+
+            if df is None:
+                raise ValueError("No data uploaded yet.")
+
+            result = visualize_outlier_data(prompt, df)
             return JSONResponse(content={"type": "plot", "data": json.loads(result)})
+
         elif "variability analysis" in prompt_lower:
             result = plot_variability_tool(prompt)
             return JSONResponse(content={"type": "plot", "data": json.loads(result)})
+
         else:
             result = agent.run(prompt)
             return JSONResponse(content={"type": "text", "data": str(result)})
+
     except Exception as e:
         return JSONResponse(content={"type": "text", "data": f"Error: {e}"}, status_code=500)
