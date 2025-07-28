@@ -189,6 +189,19 @@ def missing_datetime_intervals():
     formatted = [{"start": str(start), "end": str(end)} for start, end in intervals]
     return JSONResponse(content={"intervals": formatted})
 
+@app.get("/missing_value_intervals")
+def missing_value_intervals(column: str):
+    global augmented_df
+    if augmented_df is None:
+        return JSONResponse(content={"error": "Missing Date Times treatment must be applied first."}, status_code=400)
+    if column not in augmented_df.columns:
+        return JSONResponse(content={"error": f"Column '{column}' not found in data."}, status_code=400)
+
+    intervals = get_missing_value_intervals(augmented_df, column)
+    formatted = [{"start": str(start), "end": str(end)} for start, end in intervals]
+    return JSONResponse(content={"intervals": formatted})
+
+
 @app.get("/get_columns")
 def get_columns():
     global uploaded_df
@@ -239,6 +252,43 @@ def apply_treatment(payload: dict):
                 augmented_df.loc[mask, column] = median_val
 
     return {"message": "Treatment applied successfully"}
+
+@app.post("/apply_missing_value_treatment")
+def apply_missing_value_treatment(payload: dict):
+    global augmented_df
+
+    column = payload.get("column")
+    intervals = payload.get("intervals", [])
+    method = payload.get("method")
+
+    if not column or not intervals or not method:
+        return JSONResponse(content={"error": "Invalid payload: column, intervals, and method are required."}, status_code=400)
+
+    if augmented_df is None:
+        return JSONResponse(content={"error": "Missing Date Times treatment must be applied first."}, status_code=400)
+
+    for interval in intervals:
+        start = pd.to_datetime(interval['start'])
+        end = pd.to_datetime(interval['end'])
+        mask = (augmented_df['Date_time'] >= start) & (augmented_df['Date_time'] <= end)
+
+        if method == "Delete rows":
+            augmented_df = augmented_df[~mask]
+        elif method == "Forward fill":
+            augmented_df.loc[mask, column] = augmented_df[column].ffill()
+        elif method == "Backward fill":
+            augmented_df.loc[mask, column] = augmented_df[column].bfill()
+        elif method == "Mean":
+            mean_val = augmented_df[column].mean()
+            augmented_df.loc[mask, column] = mean_val
+        elif method == "Median":
+            median_val = augmented_df[column].median()
+            augmented_df.loc[mask, column] = median_val
+        else:
+            return JSONResponse(content={"error": f"Unknown method: {method}"}, status_code=400)
+
+    return JSONResponse(content={"message": f"Missing value treatment applied to column '{column}'."})
+
     
 @app.get("/download")
 def download_file():
