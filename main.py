@@ -191,6 +191,9 @@ def missing_datetime_intervals():
 
 @app.get("/missing_value_intervals")
 def missing_value_intervals(column: str):
+    print(f"Column received: {column}")
+    if column not in df.columns:
+        raise HTTPException(status_code=400, detail="Invalid column name")
     global augmented_df
     if augmented_df is None:
         return JSONResponse(content={"error": "Missing Date Times treatment must be applied first."}, status_code=400)
