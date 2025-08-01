@@ -222,8 +222,10 @@ def apply_treatment(payload: dict):
     if not columns or not intervals or not method:
         return {"message": "Invalid payload: columns, intervals, and method are required."}
 
-    # Augment uploaded_df with full datetime range if not already done
-    if augmented_df is None:
+    # Always work off current state of augmented_df or build it fresh
+    if augmented_df is not None:
+        df = augmented_df.copy()
+    else:
         df = uploaded_df.sort_values('Date_time').reset_index(drop=True)
         inferred_freq = pd.infer_freq(df['Date_time'])
         if inferred_freq is None:
@@ -231,27 +233,27 @@ def apply_treatment(payload: dict):
             most_common_diff = diffs.mode()[0] if not diffs.empty else pd.Timedelta(hours=1)
             inferred_freq = most_common_diff
         full_range = pd.date_range(start=df['Date_time'].min(), end=df['Date_time'].max(), freq=inferred_freq)
-        full_df = pd.DataFrame({'Date_time': full_range})
-        augmented_df = pd.merge(full_df, df, on='Date_time', how='left')
+        df = pd.DataFrame({'Date_time': full_range}).merge(df, on='Date_time', how='left')
 
     for interval in intervals:
         start = pd.to_datetime(interval['start'])
         end = pd.to_datetime(interval['end'])
-        mask = (augmented_df['Date_time'] >= start) & (augmented_df['Date_time'] <= end)
+        mask = (df['Date_time'] >= start) & (df['Date_time'] <= end)
 
         for column in columns:
             if method == "Delete rows":
-                augmented_df = augmented_df[~mask]
+                df = df[~mask]
             elif method == "Forward fill":
-                augmented_df.loc[mask, column] = augmented_df[column].ffill()
+                df.loc[mask, column] = df[column].ffill()
             elif method == "Backward fill":
-                augmented_df.loc[mask, column] = augmented_df[column].bfill()
+                df.loc[mask, column] = df[column].bfill()
             elif method == "Mean":
-                mean_val = augmented_df[column].mean()
-                augmented_df.loc[mask, column] = mean_val
+                df.loc[mask, column] = df[column].mean()
             elif method == "Median":
-                median_val = augmented_df[column].median()
-                augmented_df.loc[mask, column] = median_val
+                df.loc[mask, column] = df[column].median()
+
+    # ✅ Reassign updated dataframe to global
+    augmented_df = df
 
     return {"message": "Treatment applied successfully"}
 
