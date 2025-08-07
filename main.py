@@ -254,12 +254,13 @@ def apply_treatment(payload: dict):
 
     # ✅ Reassign updated dataframe to global
     augmented_df = df
-
+    print("Shape of augmented_df after apply_treatment:", augmented_df.shape)
     return {"message": "Treatment applied successfully"}
 
 @app.post("/apply_missing_value_treatment")
 def apply_missing_value_treatment(payload: dict):
     global augmented_df
+    print("Shape of augmented_df at start of apply_missing_value_treatment:", augmented_df.shape if 'augmented_df' in globals() else "augmented_df not found")
 
     column = payload.get("column")
     intervals = payload.get("intervals", [])
