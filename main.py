@@ -332,6 +332,11 @@ agent = initialize_agent(tools, llm, agent="zero-shot-react-description", verbos
 @app.post("/chat")
 async def chat(request: Request):
     global uploaded_df, augmented_df
+    if uploaded_df is None:
+        print("[CHAT] ERROR: No uploaded DataFrame found.")
+    else:
+            print(f"[CHAT] DataFrame shape: {uploaded_df.shape}")
+            print(f"[CHAT] DataFrame columns: {uploaded_df.columns.tolist()}")
 
     try:
         body = await request.body()
@@ -358,6 +363,7 @@ async def chat(request: Request):
 
         elif "variability analysis" in prompt_lower:
             result = plot_variability_tool(prompt)
+            print("[CHAT] Tool executed successfully.")
             return JSONResponse(content={"type": "plot", "data": json.loads(result)})
 
         else:
