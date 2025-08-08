@@ -365,6 +365,7 @@ async def chat(request: Request):
             result = plot_variability_tool(prompt)
             print("[CHAT] Tool executed successfully.")
             return JSONResponse(content={"type": "plot", "data": json.loads(result)})
+            print("[CHAT] Json generated in back end")
 
         else:
             result = agent.run(prompt)
