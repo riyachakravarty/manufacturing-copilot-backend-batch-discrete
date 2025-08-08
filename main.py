@@ -58,10 +58,13 @@ def plot_variability_analysis_combined(selected_variable):
     return fig.to_json()
 
 def plot_variability_tool(input_text):
-    match = re.search(r"selected variable is ['\"](.+?)['\"]", input_text)
+    # Updated regex to make quotes optional and more flexible
+    match = re.search(r"selected variable is ['\"]?(.+?)['\"]?$", input_text, re.IGNORECASE)
     if not match:
+        print(f"[VARIABILITY TOOL] Could not parse selected variable from prompt: {input_text}")
         return "Could not find selected variable in prompt."
-    selected_variable = match.group(1)
+    selected_variable = match.group(1).strip()
+    print(f"[VARIABILITY TOOL] Selected variable parsed: {selected_variable}")
     return plot_variability_analysis_combined(selected_variable)
 
 def get_missing_datetime_intervals(df, datetime_col='Date_time'):
@@ -335,14 +338,15 @@ async def chat(request: Request):
     if uploaded_df is None:
         print("[CHAT] ERROR: No uploaded DataFrame found.")
     else:
-            print(f"[CHAT] DataFrame shape: {uploaded_df.shape}")
-            print(f"[CHAT] DataFrame columns: {uploaded_df.columns.tolist()}")
+        print(f"[CHAT] DataFrame shape: {uploaded_df.shape}")
+        print(f"[CHAT] DataFrame columns: {uploaded_df.columns.tolist()}")
 
     try:
         body = await request.body()
         data = json.loads(body)
         prompt = data.get("prompt", "")
     except Exception as e:
+        print(f"[CHAT] Error parsing request body: {e}")
         return JSONResponse(content={"type": "text", "data": "Invalid request format."}, status_code=400)
 
     prompt_lower = prompt.lower()
@@ -352,12 +356,9 @@ async def chat(request: Request):
             return JSONResponse(content={"type": "plot", "data": json.loads(result)})
 
         elif "outlier analysis" in prompt_lower:
-            # Use augmented_df if treatment has been applied, else fallback to uploaded_df
             df = augmented_df if augmented_df is not None else uploaded_df
-
             if df is None:
                 raise ValueError("No data uploaded yet.")
-
             result = visualize_outlier_data(prompt, df)
             return JSONResponse(content={"type": "plot", "data": json.loads(result)})
 
@@ -365,20 +366,17 @@ async def chat(request: Request):
             result = plot_variability_tool(prompt)
             print("[CHAT] Result type from plot_variability_tool:", type(result))
             print("[CHAT] Raw result:", result)
-            print("[CHAT] Tool executed successfully.")
 
-            if isinstance(result, JSONResponse):
-                return result
+            # If the tool returned a plain error string, handle gracefully
+            if isinstance(result, str) and result.startswith("Could not find selected variable"):
+                return JSONResponse(content={"type": "text", "data": result}, status_code=400)
 
-            if hasattr(result, "to_json"):
-                return JSONResponse(content={"type": "plot", "data": json.loads(result.to_json())})
-                
             return JSONResponse(content={"type": "plot", "data": json.loads(result)})
-            print("[CHAT] Json generated in back end")
 
         else:
             result = agent.run(prompt)
             return JSONResponse(content={"type": "text", "data": str(result)})
 
     except Exception as e:
+        print(f"[CHAT] Exception: {e}")
         return JSONResponse(content={"type": "text", "data": f"Error: {e}"}, status_code=500)
