@@ -113,10 +113,12 @@ def visualize_missing_data(input_text):
     global uploaded_df
     if uploaded_df is None:
         return "No data uploaded."
-    match = re.search(r"selected variable is ['\"](.+?)['\"]", input_text)
+    match = re.search(r"selected variable is ['\"]?(.+?)['\"]?$", input_text, re.IGNORECASE)
     if not match:
+        print(f"[VARIABILITY TOOL] Could not parse selected variable from prompt: {input_text}")
         return "Could not find selected variable in prompt."
-    selected_variable = match.group(1)
+    selected_variable = match.group(1).strip()
+    print(f"[Vizualize function] Selected variable parsed: {selected_variable}")
     if selected_variable not in uploaded_df.columns:
         return f"Column '{selected_variable}' not in dataframe."
     fig = go.Figure()
