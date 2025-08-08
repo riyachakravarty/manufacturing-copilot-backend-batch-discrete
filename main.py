@@ -363,7 +363,16 @@ async def chat(request: Request):
 
         elif "variability analysis" in prompt_lower:
             result = plot_variability_tool(prompt)
+            print("[CHAT] Result type from plot_variability_tool:", type(result))
+            print("[CHAT] Raw result:", result)
             print("[CHAT] Tool executed successfully.")
+
+            if isinstance(result, JSONResponse):
+                return result
+
+            if hasattr(result, "to_json"):
+                return JSONResponse(content={"type": "plot", "data": json.loads(result.to_json())})
+                
             return JSONResponse(content={"type": "plot", "data": json.loads(result)})
             print("[CHAT] Json generated in back end")
 
