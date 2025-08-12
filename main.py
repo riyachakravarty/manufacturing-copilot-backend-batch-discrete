@@ -363,6 +363,8 @@ async def chat(request: Request):
             if df is None:
                 raise ValueError("No data uploaded yet.")
             result = visualize_outlier_data(prompt)
+            print("[CHAT] Result type from visualize_outlier_data:", type(result))
+            print("[CHAT] Raw result:", result)
             return JSONResponse(content={"type": "plot", "data": json.loads(result)})
 
         elif "variability analysis" in prompt_lower:
