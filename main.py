@@ -166,10 +166,15 @@ def visualize_outlier_data(prompt):
     df = augmented_df if augmented_df is not None else uploaded_df
     if df is None:
         raise ValueError("No data uploaded yet.")
-    column_match = re.search(r"selected variable is ['\"](.+?)['\"]", prompt)
-    if not column_match:
-        return "Could not extract column from prompt."
-    column = column_match.group(1)
+
+    match = re.search(r"selected variable is ['\"]?(.+?)['\"]?$", input_text, re.IGNORECASE)
+    if not match:
+        print(f"[VARIABILITY TOOL] Could not parse selected variable from prompt: {prompt}")
+        return "Could not find selected variable in prompt."
+    column = match.group(1).strip()
+    print(f"[Vizualize function] Selected variable parsed: {column}")
+    if column not in df.columns:
+        return f"Column '{column}' not in dataframe."
     method = "zscore"
     if "iqr" in prompt.lower():
         method = "iqr"
