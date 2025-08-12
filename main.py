@@ -167,7 +167,7 @@ def visualize_outlier_data(prompt):
     if df is None:
         raise ValueError("No data uploaded yet.")
 
-    match = re.search(r"selected variable is ['\"]?(.+?)['\"]?$", input_text, re.IGNORECASE)
+    match = re.search(r"selected variable is ['\"]?(.+?)['\"]?$", prompt, re.IGNORECASE)
     if not match:
         print(f"[VARIABILITY TOOL] Could not parse selected variable from prompt: {prompt}")
         return "Could not find selected variable in prompt."
