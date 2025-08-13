@@ -113,7 +113,7 @@ def visualize_missing_data(input_text):
     global uploaded_df
     if uploaded_df is None:
         return "No data uploaded."
-    match = re.search(r"selected variable is ['\"]?(.+?)['\"]?$", input_text, re.IGNORECASE)
+    match = re.search(r"selected variable is ['\"]?(.+?)['\"]?(?=\s+using method|$)", prompt, re.IGNORECASE)
     if not match:
         print(f"[VARIABILITY TOOL] Could not parse selected variable from prompt: {input_text}")
         return "Could not find selected variable in prompt."
