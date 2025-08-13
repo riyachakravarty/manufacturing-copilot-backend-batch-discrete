@@ -113,9 +113,9 @@ def visualize_missing_data(input_text):
     global uploaded_df
     if uploaded_df is None:
         return "No data uploaded."
-    match = re.search(r"selected variable is ['\"]?(.+?)['\"]?(?=\s+using method|$)", prompt, re.IGNORECASE)
+    match = re.search(r"selected variable is ['\"]?(.+?)['\"]?$", prompt, re.IGNORECASE)
     if not match:
-        print(f"[VARIABILITY TOOL] Could not parse selected variable from prompt: {input_text}")
+        print(f"[VISUALIZE_MISSING_DATA] Could not parse selected variable from prompt: {input_text}")
         return "Could not find selected variable in prompt."
     selected_variable = match.group(1).strip()
     print(f"[Vizualize function] Selected variable parsed: {selected_variable}")
@@ -166,10 +166,9 @@ def visualize_outlier_data(prompt):
     df = augmented_df if augmented_df is not None else uploaded_df
     if df is None:
         raise ValueError("No data uploaded yet.")
-
-    match = re.search(r"selected variable is ['\"]?(.+?)['\"]?$", prompt, re.IGNORECASE)
+    match = re.search(r"selected variable is ['\"]?(.+?)['\"]?(?=\s+using method|$)", prompt, re.IGNORECASE)
     if not match:
-        print(f"[VARIABILITY TOOL] Could not parse selected variable from prompt: {prompt}")
+        print(f"[VISUALIZE_OUTLIER_DATA] Could not parse selected variable from prompt: {prompt}")
         return "Could not find selected variable in prompt."
     column = match.group(1).strip()
     print(f"[Vizualize function] Selected variable parsed: {column}")
