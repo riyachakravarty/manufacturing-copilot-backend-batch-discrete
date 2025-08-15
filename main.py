@@ -130,6 +130,28 @@ def visualize_missing_data(input_text):
     fig.update_layout(title=f"Missing Data Visualization: '{selected_variable}' Over Time", xaxis_title='Date_time', yaxis_title=selected_variable, hovermode="x unified", height=600)
     return fig.to_json()
 
+def visualize_missing_data_post_treatment(input_text):
+    global augmented_df
+    df = augmented_df
+    if df is None:
+        raise ValueError("No data exists for plot")
+    match = re.search(r"selected variable is ['\"]?(.+?)['\"]?$", input_text, re.IGNORECASE)
+    if not match:
+        print(f"[VISUALIZE_MISSING_DATA] Could not parse selected variable from prompt: {input_text}")
+        return "Could not find selected variable in prompt."
+    selected_variable = match.group(1).strip()
+    print(f"[Vizualize function] Selected variable parsed: {selected_variable}")
+    if selected_variable not in df.columns:
+        return f"Column '{selected_variable}' not in dataframe."
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df['Date_time'], y=df[selected_variable], mode='lines+markers', name=selected_variable, line=dict(color='blue')))
+    for start, end in get_missing_value_intervals(df, selected_variable):
+        fig.add_vrect(x0=start, x1=end, fillcolor="orange", opacity=0.3, line_width=0)
+    for start, end in get_missing_datetime_intervals(df):
+        fig.add_vrect(x0=start, x1=end, fillcolor="red", opacity=0.2, line_width=0)
+    fig.update_layout(title=f"Missing Data Visualization: '{selected_variable}' Over Time", xaxis_title='Date_time', yaxis_title=selected_variable, hovermode="x unified", height=600)
+    return fig.to_json()
+
 def get_outlier_intervals(df, column, datetime_col='Date_time', method='zscore', threshold=3):
     df = df.sort_values(by=datetime_col).reset_index(drop=True)
     if method == 'zscore':
@@ -360,6 +382,10 @@ async def chat(request: Request):
     try:
         if "missing value analysis" in prompt_lower or "anomaly analysis" in prompt_lower:
             result = visualize_missing_data(prompt)
+            return JSONResponse(content={"type": "plot", "data": json.loads(result)})
+
+        if "post treatment missing value plot" in prompt_lower:
+            result = visualize_missing_data_post_treatment(prompt)
             return JSONResponse(content={"type": "plot", "data": json.loads(result)})
 
         elif "outlier analysis" in prompt_lower:
