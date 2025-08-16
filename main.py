@@ -287,7 +287,7 @@ def apply_treatment(payload: dict):
     # ✅ Reassign updated dataframe to global
     augmented_df = df
     print("Shape of augmented_df after apply_treatment:", augmented_df.shape)
-    return {"message": "Treatment applied successfully"}
+    return {"message": "Treatment applied successfully!", "augmented_df": augmented_df.to_dict(orient="records")}
 
 @app.post("/apply_missing_value_treatment")
 def apply_missing_value_treatment(payload: dict):
@@ -324,7 +324,7 @@ def apply_missing_value_treatment(payload: dict):
         else:
             return JSONResponse(content={"error": f"Unknown method: {method}"}, status_code=400)
 
-    return JSONResponse(content={"message": f"Missing value treatment applied to column '{column}'."})
+    return {"message": "Treatment applied successfully!", "augmented_df": augmented_df.to_dict(orient="records")}
 
     
 @app.get("/download")
