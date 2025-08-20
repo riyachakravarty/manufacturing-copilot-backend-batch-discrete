@@ -127,7 +127,7 @@ def visualize_missing_data(input_text):
         fig.add_vrect(x0=start, x1=end, fillcolor="orange", opacity=0.3, line_width=0)
     for start, end in get_missing_datetime_intervals(uploaded_df):
         fig.add_vrect(x0=start, x1=end, fillcolor="red", opacity=0.2, line_width=0)
-    fig.update_layout(title=f"Missing Data Visualization: '{selected_variable}' Over Time", xaxis_title='Date_time', yaxis_title=selected_variable, hovermode="x unified", height=600)
+    fig.update_layout(title=f"Missing Data Visualization: '{selected_variable}' Over Time", xaxis_title='Date_time', yaxis_title=selected_variable, hovermode="x unified", height=800, width=1500)
     return fig.to_json()
 
 def visualize_missing_data_post_treatment(input_text):
