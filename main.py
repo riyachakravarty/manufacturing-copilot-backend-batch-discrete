@@ -235,6 +235,21 @@ def missing_value_intervals(column: str):
     formatted = [{"start": str(start), "end": str(end)} for start, end in intervals]
     return JSONResponse(content={"intervals": formatted})
 
+@app.get("/outlier_intervals")
+def outlier_intervals(column: str):
+    print(f"Column received: {column}")
+    
+    global augmented_df
+    df = augmented_df if augmented_df is not None else uploaded_df
+    if df is None:
+        raise ValueError("No data uploaded yet.")
+    if column not in df.columns:
+        return JSONResponse(content={"error": f"Column '{column}' not found in data."}, status_code=400)
+
+    intervals = get_outlier_intervals(df, column)
+    formatted = [{"start": str(start), "end": str(end)} for start, end in intervals]
+    return JSONResponse(content={"intervals": formatted})
+
 
 @app.get("/get_columns")
 def get_columns():
