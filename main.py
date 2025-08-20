@@ -127,7 +127,7 @@ def visualize_missing_data(input_text):
         fig.add_vrect(x0=start, x1=end, fillcolor="orange", opacity=0.3, line_width=0)
     for start, end in get_missing_datetime_intervals(uploaded_df):
         fig.add_vrect(x0=start, x1=end, fillcolor="red", opacity=0.2, line_width=0)
-    fig.update_layout(title=f"Missing Data Visualization: '{selected_variable}' Over Time", xaxis_title='Date_time', yaxis_title=selected_variable, hovermode="x unified", height=600, width=700)
+    fig.update_layout(title=f"Missing Data Visualization: '{selected_variable}' Over Time", xaxis_title='Date_time', yaxis_title=selected_variable, hovermode="x unified", height=500, width=700)
     return fig.to_json()
 
 def visualize_missing_data_post_treatment(input_text):
@@ -149,7 +149,7 @@ def visualize_missing_data_post_treatment(input_text):
         fig.add_vrect(x0=start, x1=end, fillcolor="orange", opacity=0.3, line_width=0)
     for start, end in get_missing_datetime_intervals(df):
         fig.add_vrect(x0=start, x1=end, fillcolor="red", opacity=0.2, line_width=0)
-    fig.update_layout(title=f"Missing Data Visualization: '{selected_variable}' Over Time", xaxis_title='Date_time', yaxis_title=selected_variable, hovermode="x unified", height=600, width=700)
+    fig.update_layout(title=f"Missing Data Visualization: '{selected_variable}' Over Time", xaxis_title='Date_time', yaxis_title=selected_variable, hovermode="x unified", height=500, width=700)
     return fig.to_json()
 
 def get_outlier_intervals(df, column, datetime_col='Date_time', method='zscore', threshold=3):
@@ -209,7 +209,7 @@ def visualize_outlier_data(prompt):
     fig.add_trace(go.Scatter(x=df['Date_time'], y=df[column], mode='lines+markers', name=column, line=dict(color='blue')))
     for start, end in intervals:
         fig.add_vrect(x0=start, x1=end, fillcolor="purple", opacity=0.3, line_width=0)
-    fig.update_layout(title=f"Outlier Analysis ({method.upper()}): '{column}'", xaxis_title='Date_time', yaxis_title=column, hovermode="x unified", height=600, width=700)
+    fig.update_layout(title=f"Outlier Analysis ({method.upper()}): '{column}'", xaxis_title='Date_time', yaxis_title=column, hovermode="x unified", height=500, width=700)
     return fig.to_json()
 
 @app.get("/missing_datetime_intervals")
