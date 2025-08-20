@@ -154,6 +154,7 @@ def visualize_missing_data_post_treatment(input_text):
 
 def get_outlier_intervals(df, column, datetime_col='Date_time', method='zscore', threshold=3):
     df = df.sort_values(by=datetime_col).reset_index(drop=True)
+    method=method.lower()
     if method == 'zscore':
         df['zscore'] = zscore(df[column].dropna())
         df['is_outlier'] = df['zscore'].abs() > threshold
@@ -236,7 +237,7 @@ def missing_value_intervals(column: str):
     return JSONResponse(content={"intervals": formatted})
 
 @app.get("/outlier_intervals")
-def outlier_intervals(column: str):
+def outlier_intervals(column: str, method: str):
     print(f"Column received: {column}")
     
     global augmented_df
@@ -246,7 +247,7 @@ def outlier_intervals(column: str):
     if column not in df.columns:
         return JSONResponse(content={"error": f"Column '{column}' not found in data."}, status_code=400)
 
-    intervals = get_outlier_intervals(df, column)
+    intervals = get_outlier_intervals(df, column, method)
     formatted = [{"start": str(start), "end": str(end)} for start, end in intervals]
     return JSONResponse(content={"intervals": formatted})
 
