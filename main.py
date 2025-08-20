@@ -155,7 +155,7 @@ def visualize_missing_data_post_treatment(input_text):
 def get_outlier_intervals(df, column, datetime_col='Date_time', method='zscore', threshold=3):
     df = df.sort_values(by=datetime_col).reset_index(drop=True)
     method=method.lower()
-    if method == 'zscore':
+    if method == 'zscore' or method='z-score':
         df['zscore'] = zscore(df[column].dropna())
         df['is_outlier'] = df['zscore'].abs() > threshold
     elif method == 'iqr':
