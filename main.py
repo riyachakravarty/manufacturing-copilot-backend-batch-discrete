@@ -152,7 +152,7 @@ def visualize_missing_data_post_treatment(input_text):
     fig.update_layout(title=f"Missing Data Visualization: '{selected_variable}' Over Time", xaxis_title='Date_time', yaxis_title=selected_variable, hovermode="x unified", height=500, width=700)
     return fig.to_json()
 
-def get_outlier_intervals(df, column, datetime_col='Date_time', method='zscore', threshold=3):
+def get_outlier_intervals(df, column, method='z-score', datetime_col='Date_time', threshold=3):
     df = df.sort_values(by=datetime_col).reset_index(drop=True)
     method=method.lower()
     if method == 'zscore' or method == 'z-score':
