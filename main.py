@@ -553,8 +553,7 @@ def qcut_boxplot(request: QcutRequest):
                 categoryarray=bin_labels
             )
 
-        return JSONResponse(content={"type": "plot", "data": fig.to_dict()})
-
+        return JSONResponse(content={"type": "plot", "data": json.loads(fig.to_json())})
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
