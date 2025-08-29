@@ -497,23 +497,18 @@ def qcut_boxplot(request: QcutRequest):
 
     try:
         df = df.copy()
-        # Get quantile bins and their interval labels
+        # Quantile binning
         df['quantile_bin'], bins = pd.qcut(df[target], q=quantiles, retbins=True, duplicates="drop")
 
-        #Build labels like Q1: (50.2, 65.4]
+        # Build readable labels like Q1: (50.2, 65.4]
         unique_bins = df['quantile_bin'].cat.categories
         bin_labels = [f"Q{i+1}: {str(interval)}" for i, interval in enumerate(unique_bins)]
 
-        # Create quantile bins with readable labels
-        #df['quantile_bin'] = pd.qcut(df[target], q=quantiles, duplicates="drop")
-        #df['quantile_label'] = df['quantile_bin'].astype(str)  # <-- force string labels
-        #bin_labels = sorted(df['quantile_label'].unique().tolist())
-
-        # Map each row’s bin to the combined label
+        # Map each row’s bin to label
         bin_mapping = {interval: label for interval, label in zip(unique_bins, bin_labels)}
         df['quantile_label'] = df['quantile_bin'].map(bin_mapping)
 
-        # Create subplot grid: rows = number of selected columns
+        # Create subplot grid
         fig = make_subplots(
             rows=len(columns),
             cols=1,
@@ -522,53 +517,43 @@ def qcut_boxplot(request: QcutRequest):
             subplot_titles=[f"{col} vs {target} Quantiles" for col in columns]
         )
 
-        # Loop through columns and add boxplots
+        # Add traces per column and bin
         for i, col in enumerate(columns, start=1):
-            fig.add_trace(
-                go.Box(
-                    x=df['quantile_label'],   # repeat categories
-                    y=df[col],
-                    name=col,
-                    boxmean="sd"
-                ),
-                row=i, col=1
-            )
-                
-            # Label y-axis for each subplot
+            for label in bin_labels:
+                subset = df.loc[df["quantile_label"] == label, col].dropna()
+                if subset.empty:
+                    continue
+                fig.add_trace(
+                    go.Box(
+                        y=subset,
+                        name=label,   # only Q1/Q2/...
+                        boxmean="sd"
+                    ),
+                    row=i, col=1
+                )
             fig.update_yaxes(title_text=col, row=i, col=1)
 
         # Layout
         fig.update_layout(
             title_text=f"Specialized Q-cut Box Plots grouped by {target} quantiles ({quantiles} bins)",
             showlegend=False,
-            height=400 * len(columns),  # dynamic height per variable
+            height=400 * len(columns),
             width=1200,
-            #autosize=True,
             margin=dict(l=60, r=30, t=60, b=60),
             boxmode="group",
-            #xaxis=dict(title=f"{target} Quantiles")
         )
 
-        # Force categorical X-axis with custom ordering
+        # Force categorical x-axis with correct bin order
         for i in range(1, len(columns) + 1):
             fig.update_xaxes(
                 row=i, col=1,
-                title_text=f"{target} Quantiles" if i == len(columns) else None,
+                title_text=f"{target} Quantiles",
                 type="category",
                 categoryorder="array",
-                categoryarray=bin_labels,  # enforce correct ,
-                showticklabels=True  # <- force tick labels visible
+                categoryarray=bin_labels
             )
 
-        fig_dict = fig.to_dict()
-        if fig_dict["data"]:
-            first_trace = fig_dict["data"][0]
-            unique_x = list(set(first_trace["x"]))
-            print(f"\nTRACE DEBUG --- First trace '{first_trace['name']}':")
-            print(f"  Total points: {len(first_trace['x'])}")
-            print(f"  Unique X categories: {unique_x}\n")
-
-        return JSONResponse(content={"type": "plot", "data": json.loads(fig.to_json())})
+        return JSONResponse(content={"type": "plot", "data": fig.to_dict()})
 
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
