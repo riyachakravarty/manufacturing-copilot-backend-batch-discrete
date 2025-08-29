@@ -472,7 +472,7 @@ async def chat(request: Request):
 
 ########################## Exploratory data analysis tab ##########################################
 @app.post("/eda/qcut_boxplot")
-def qcut_boxplotdef qcut_boxplot(
+def qcut_boxplot(
     columns: list[str],
     target: str = Query(..., description="Target column for quantile binning"),
     quantiles: int = Query(4, description="Number of quantiles to divide target into")
