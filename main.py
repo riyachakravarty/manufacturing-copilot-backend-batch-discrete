@@ -556,7 +556,7 @@ def qcut_boxplot(request: QcutRequest):
                 title_text=f"{target} Quantiles" if i == len(columns) else None,
                 type="category",
                 categoryorder="array",
-                categoryarray=bin_labels  # enforce correct ,
+                categoryarray=bin_labels,  # enforce correct ,
                 showticklabels=True  # <- force tick labels visible
             )
 
