@@ -478,13 +478,6 @@ class QcutRequest(BaseModel):
     quantiles: int = 4
     
 @app.post("/eda/qcut_boxplot")
-from fastapi.responses import JSONResponse
-import pandas as pd
-import numpy as np
-from plotly.subplots import make_subplots
-import plotly.graph_objs as go
-import json
-
 def qcut_boxplot(request: QcutRequest):
     """
     X-axis = target quantile labels (Q1..Qk) repeated per row
