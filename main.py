@@ -557,6 +557,16 @@ def qcut_boxplot(request: QcutRequest):
             xaxis=dict(title=f"{target} Quantiles")
         )
 
+        # Force categorical X-axis with custom ordering
+        for i in range(1, len(columns) + 1):
+            fig.update_xaxes(
+                row=i, col=1,
+                title_text=f"{target} Quantiles",
+                type="category",
+                categoryorder="array",
+                categoryarray=bin_labels  # enforce correct order
+            )
+
         return JSONResponse(content={"type": "plot", "data": json.loads(fig.to_json())})
 
     except Exception as e:
