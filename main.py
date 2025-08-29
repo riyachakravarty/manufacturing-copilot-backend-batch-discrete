@@ -524,12 +524,16 @@ def qcut_boxplot(request: QcutRequest):
 
         # Loop through columns and add boxplots
         for i, col in enumerate(columns, start=1):
-            fig.add_trace(
-                go.Box(
-                    x=df['quantile_label'],
-                     y=df[col],
-                    name=col,
-                    boxmean="sd"
+            for label in bin_labels:
+                subset = df.loc[df["quantile_label"] == label, col].dropna()
+                if subset.empty:
+                    continue
+
+                fig.add_trace(
+                    go.Box(
+                        y=subset,
+                        name=label,
+                        boxmean="sd"
                     ),
                     row=i, col=1
                 )
