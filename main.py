@@ -535,8 +535,10 @@ def qcut_boxplot(request: QcutRequest):
         fig.update_layout(
             title_text=f"Specialized Q-cut Box Plots grouped by {target} quantiles ({quantiles} bins)",
             showlegend=False,
-            height=400 * len(columns),  # dynamic height per variable
-            width=1200,
+            #height=400 * len(columns),  # dynamic height per variable
+            #width=1200,
+            autosize=True,
+            margin=dict(l=60, r=30, t=60, b=60),
             xaxis=dict(title=f"{target} Quantiles"),
         )
 
