@@ -557,10 +557,11 @@ def qcut_boxplot(request: QcutRequest):
         for i in range(1, len(columns) + 1):
             fig.update_xaxes(
                 row=i, col=1,
-                title_text=f"{target} Quantiles",
+                title_text=f"{target} Quantiles" if i == len(columns) else None,
                 type="category",
                 categoryorder="array",
-                categoryarray=bin_labels  # enforce correct order
+                categoryarray=bin_labels  # enforce correct ,
+                showticklabels=True  # <- force tick labels visible
             )
 
         return JSONResponse(content={"type": "plot", "data": json.loads(fig.to_json())})
