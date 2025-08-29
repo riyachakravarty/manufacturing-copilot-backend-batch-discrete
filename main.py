@@ -532,6 +532,7 @@ def qcut_boxplot(request: QcutRequest):
 
                 fig.add_trace(
                     go.Box(
+                        x=[label] * len(subset),  # ensure categorical x
                         y=subset,
                         name=label,
                         boxmean="sd"
