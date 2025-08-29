@@ -519,15 +519,20 @@ def qcut_boxplot(request: QcutRequest):
 
         # Loop through columns and add boxplots
         for i, col in enumerate(columns, start=1):
-            fig.add_trace(
-                go.Box(
-                    x=df['quantile_label'],
-                    y=df[col],
-                    name=col,
-                    boxmean="sd"
-                ),
-                row=i, col=1)
-
+            for q_label in bin_labels:
+                subset = df[df['quantile_label'] == q_label]
+                if subset.empty:
+                    continue
+                fig.add_trace(
+                    go.Box(
+                        x=[q_label] * len(subset),  # ✅ force categorical x
+                        y=subset[col],
+                        name=q_label,
+                        boxmean="sd"
+                    ),
+                    row=i, col=1
+                )
+                
             # Label y-axis for each subplot
             fig.update_yaxes(title_text=col, row=i, col=1)
 
@@ -536,10 +541,11 @@ def qcut_boxplot(request: QcutRequest):
             title_text=f"Specialized Q-cut Box Plots grouped by {target} quantiles ({quantiles} bins)",
             showlegend=False,
             height=400 * len(columns),  # dynamic height per variable
-            width=1200,
+            #width=1200,
             #autosize=True,
             margin=dict(l=60, r=30, t=60, b=60),
-            xaxis=dict(title=f"{target} Quantiles"),
+            boxmode="group",
+            xaxis=dict(title=f"{target} Quantiles", categoryorder="array", categoryarray=bin_labels)
         )
 
         return JSONResponse(content={"type": "plot", "data": json.loads(fig.to_json())})
