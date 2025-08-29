@@ -472,7 +472,11 @@ async def chat(request: Request):
 
 ########################## Exploratory data analysis tab ##########################################
 @app.post("/eda/qcut_boxplot")
-def qcut_boxplot(columns: list[str], target: str, quantiles: int = 4):
+def qcut_boxplotdef qcut_boxplot(
+    columns: list[str],
+    target: str = Query(..., description="Target column for quantile binning"),
+    quantiles: int = Query(4, description="Number of quantiles to divide target into")
+):
     """
     Generates specialized Q-cut box plots:
     X-axis = quantile bins of target variable
@@ -486,8 +490,10 @@ def qcut_boxplot(columns: list[str], target: str, quantiles: int = 4):
         return JSONResponse(content={"error": "No data uploaded"}, status_code=400)
 
     try:
+        df = df.copy()
         # Create quantile bins for target
         df["quantile_bin"] = pd.qcut(df[target], q=quantiles, duplicates="drop")
+        df['quantile_label'] = df["quantile_bin"].astype(str)
 
         # Create subplot grid: rows = number of selected columns
         fig = make_subplots(
