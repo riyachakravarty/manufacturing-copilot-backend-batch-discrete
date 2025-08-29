@@ -36,6 +36,7 @@ class TreatmentRequest(BaseModel):
     column: str
     intervals: list
     method: str
+########################## Data visualization and engineering tab ##########################################
 
 def summarize_data(_):
     global uploaded_df
@@ -468,3 +469,62 @@ async def chat(request: Request):
     except Exception as e:
         print(f"[CHAT] Exception: {e}")
         return JSONResponse(content={"type": "text", "data": f"Error: {e}"}, status_code=500)
+
+########################## Exploratory data analysis tab ##########################################
+@app.post("/eda/qcut_boxplot")
+def qcut_boxplot(columns: list[str], target: str, quantiles: int = 4):
+    """
+    Generates specialized Q-cut box plots:
+    X-axis = quantile bins of target variable
+    Y-axis = values of each selected column
+    Each column is plotted in a separate subplot stacked vertically
+    """
+    global augmented_df, uploaded_df
+    df = augmented_df if augmented_df is not None else uploaded_df
+
+    if df is None:
+        return JSONResponse(content={"error": "No data uploaded"}, status_code=400)
+
+    try:
+        # Create quantile bins for target
+        df["quantile_bin"] = pd.qcut(df[target], q=quantiles, duplicates="drop")
+
+        # Create subplot grid: rows = number of selected columns
+        fig = make_subplots(
+            rows=len(columns),
+            cols=1,
+            shared_xaxes=True,
+            vertical_spacing=0.1,
+            subplot_titles=[f"{col} vs {target} Quantiles" for col in columns]
+        )
+
+        # Loop through columns and add boxplots
+        for i, col in enumerate(columns, start=1):
+            for q in sorted(df["quantile_bin"].unique()):
+                subset = df[df["quantile_bin"] == q]
+                fig.add_trace(
+                    go.Box(
+                        y=subset[col],
+                        name=str(q),
+                        boxmean="sd"
+                    ),
+                    row=i, col=1
+                )
+
+            # Label y-axis for each subplot
+            fig.update_yaxes(title_text=col, row=i, col=1)
+
+        # Layout
+        fig.update_layout(
+            title_text=f"Specialized Q-cut Box Plots grouped by {target} quantiles ({quantiles} bins)",
+            showlegend=False,
+            height=400 * len(columns),  # dynamic height per variable
+            width=1200,
+            xaxis=dict(title=f"{target} Quantiles"),
+        )
+
+        return JSONResponse(content={"type": "plot", "data": json.loads(fig.to_json())})
+
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
