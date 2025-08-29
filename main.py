@@ -517,21 +517,25 @@ def qcut_boxplot(request: QcutRequest):
             subplot_titles=[f"{col} vs {target} Quantiles" for col in columns]
         )
 
-        # Add traces per column and bin
+        # Add one grouped boxplot trace per column
         for i, col in enumerate(columns, start=1):
-            for label in bin_labels:
-                subset = df.loc[df["quantile_label"] == label, col].dropna()
-                if subset.empty:
-                    continue
-                fig.add_trace(
-                    go.Box(
-                        y=subset,
-                        name=label,   # only Q1/Q2/...
-                        boxmean="sd"
-                    ),
-                    row=i, col=1
-                )
+            fig.add_trace(
+                go.Box(
+                    x=df["quantile_label"],
+                    y=df[col],
+                    name=col,
+                    boxmean="sd"
+                ),
+                row=i, col=1
+            )
             fig.update_yaxes(title_text=col, row=i, col=1)
+            fig.update_xaxes(
+                row=i, col=1,
+                title_text=f"{target} Quantiles",
+                type="category",
+                categoryorder="array",
+                categoryarray=bin_labels
+            )
 
         # Layout
         fig.update_layout(
@@ -542,16 +546,6 @@ def qcut_boxplot(request: QcutRequest):
             margin=dict(l=60, r=30, t=60, b=60),
             boxmode="group",
         )
-
-        # Force categorical x-axis with correct bin order
-        for i in range(1, len(columns) + 1):
-            fig.update_xaxes(
-                row=i, col=1,
-                title_text=f"{target} Quantiles",
-                type="category",
-                categoryorder="array",
-                categoryarray=bin_labels
-            )
 
         return JSONResponse(content={"type": "plot", "data": json.loads(fig.to_json())})
     except Exception as e:
