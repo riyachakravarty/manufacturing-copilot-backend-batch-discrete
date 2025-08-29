@@ -14,6 +14,7 @@ from langchain.agents import initialize_agent, Tool
 from langchain.llms import OpenAI
 from scipy.stats import zscore
 from langchain_community.llms import OpenAI  # updated import
+from pydantic import BaseModel
 
 
 app = FastAPI()
@@ -471,12 +472,13 @@ async def chat(request: Request):
         return JSONResponse(content={"type": "text", "data": f"Error: {e}"}, status_code=500)
 
 ########################## Exploratory data analysis tab ##########################################
+class QcutRequest(BaseModel):
+    columns: list[str]
+    target: str
+    quantiles: int = 4
+    
 @app.post("/eda/qcut_boxplot")
-def qcut_boxplot(
-    columns: list[str],
-    target: str = Query(..., description="Target column for quantile binning"),
-    quantiles: int = Query(4, description="Number of quantiles to divide target into")
-):
+def qcut_boxplot(request: QcutRequest):
     """
     Generates specialized Q-cut box plots:
     X-axis = quantile bins of target variable
@@ -488,6 +490,10 @@ def qcut_boxplot(
 
     if df is None:
         return JSONResponse(content={"error": "No data uploaded"}, status_code=400)
+
+    target = request.target
+    columns = request.columns
+    quantiles = request.quantiles
 
     try:
         df = df.copy()
