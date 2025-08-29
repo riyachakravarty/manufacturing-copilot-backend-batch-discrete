@@ -506,8 +506,8 @@ def qcut_boxplot(request: QcutRequest):
 
         # Create quantile bins with readable labels
         #df['quantile_bin'] = pd.qcut(df[target], q=quantiles, duplicates="drop")
-        df['quantile_label'] = df['quantile_bin'].astype(str)  # <-- force string labels
-        bin_labels = sorted(df['quantile_label'].unique().tolist())
+        #df['quantile_label'] = df['quantile_bin'].astype(str)  # <-- force string labels
+        #bin_labels = sorted(df['quantile_label'].unique().tolist())
 
         # Map each row’s bin to the combined label
         bin_mapping = {interval: label for interval, label in zip(unique_bins, bin_labels)}
@@ -524,23 +524,20 @@ def qcut_boxplot(request: QcutRequest):
 
         # Loop through columns and add boxplots
         for i, col in enumerate(columns, start=1):
-            col_data = df[[col, "quantile_label"]].dropna()
+            # For each quantile bin, add its own boxplot (subset)
+            for label in bin_labels:
+                subset = df[df["quantile_label"] == label][col].dropna()
+                if subset.empty:
+                    continue
 
-            # Debug logging
-            counts = col_data["quantile_label"].value_counts().sort_index()
-            print(f"\nColumn: {col}")
-            for q_label, count in counts.items():
-                print(f"  {q_label}: {count} rows")
-
-            fig.add_trace(
-                go.Box(
-                    x=col_data["quantile_label"],
-                    y=col_data[col],
-                    name=col,
-                    boxmean="sd"
-                ),
-                row=i, col=1
-            )
+                fig.add_trace(
+                    go.Box(
+                        y=subset,
+                        name=label,
+                        boxmean="sd"
+                    ),
+                    row=i, col=1
+                )
                 
             # Label y-axis for each subplot
             fig.update_yaxes(title_text=col, row=i, col=1)
@@ -554,7 +551,7 @@ def qcut_boxplot(request: QcutRequest):
             #autosize=True,
             margin=dict(l=60, r=30, t=60, b=60),
             boxmode="group",
-            xaxis=dict(title=f"{target} Quantiles")
+            #xaxis=dict(title=f"{target} Quantiles")
         )
 
         # Force categorical X-axis with custom ordering
