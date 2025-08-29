@@ -498,20 +498,20 @@ def qcut_boxplot(request: QcutRequest):
     try:
         df = df.copy()
         # Get quantile bins and their interval labels
-        #df['quantile_bin'], bins = pd.qcut(df[target], q=quantiles, retbins=True, duplicates="drop")
+        df['quantile_bin'], bins = pd.qcut(df[target], q=quantiles, retbins=True, duplicates="drop")
 
         #Build labels like Q1: (50.2, 65.4]
-        #unique_bins = df['quantile_bin'].cat.categories
-        #bin_labels = [f"Q{i+1}: {str(interval)}" for i, interval in enumerate(unique_bins)]
+        unique_bins = df['quantile_bin'].cat.categories
+        bin_labels = [f"Q{i+1}: {str(interval)}" for i, interval in enumerate(unique_bins)]
 
         # Create quantile bins with readable labels
-        df['quantile_bin'] = pd.qcut(df[target], q=quantiles, duplicates="drop")
+        #df['quantile_bin'] = pd.qcut(df[target], q=quantiles, duplicates="drop")
         df['quantile_label'] = df['quantile_bin'].astype(str)  # <-- force string labels
         bin_labels = sorted(df['quantile_label'].unique().tolist())
 
         # Map each row’s bin to the combined label
-        #bin_mapping = {interval: label for interval, label in zip(unique_bins, bin_labels)}
-        #df['quantile_label'] = df['quantile_bin'].map(bin_mapping)
+        bin_mapping = {interval: label for interval, label in zip(unique_bins, bin_labels)}
+        df['quantile_label'] = df['quantile_bin'].map(bin_mapping)
 
         # Create subplot grid: rows = number of selected columns
         fig = make_subplots(
@@ -522,12 +522,20 @@ def qcut_boxplot(request: QcutRequest):
             subplot_titles=[f"{col} vs {target} Quantiles" for col in columns]
         )
 
-        # Add one trace per column
+        # Loop through columns and add boxplots
         for i, col in enumerate(columns, start=1):
+            col_data = df[[col, "quantile_label"]].dropna()
+
+            # Debug logging
+            counts = col_data["quantile_label"].value_counts().sort_index()
+            print(f"\nColumn: {col}")
+            for q_label, count in counts.items():
+                print(f"  {q_label}: {count} rows")
+
             fig.add_trace(
                 go.Box(
-                    x=df['quantile_label'],  # categorical bins
-                    y=df[col],
+                    x=col_data["quantile_label"],
+                    y=col_data[col],
                     name=col,
                     boxmean="sd"
                 ),
@@ -542,11 +550,11 @@ def qcut_boxplot(request: QcutRequest):
             title_text=f"Specialized Q-cut Box Plots grouped by {target} quantiles ({quantiles} bins)",
             showlegend=False,
             height=400 * len(columns),  # dynamic height per variable
-            #width=1200,
-            autosize=True,
+            width=1200,
+            #autosize=True,
             margin=dict(l=60, r=30, t=60, b=60),
             boxmode="group",
-            xaxis=dict(title=f"{target} Quantiles", categoryorder="array", categoryarray=bin_labels)
+            xaxis=dict(title=f"{target} Quantiles")
         )
 
         return JSONResponse(content={"type": "plot", "data": json.loads(fig.to_json())})
