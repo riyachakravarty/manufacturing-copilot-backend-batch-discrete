@@ -560,6 +560,14 @@ def qcut_boxplot(request: QcutRequest):
                 showticklabels=True  # <- force tick labels visible
             )
 
+        fig_dict = fig.to_dict()
+        if fig_dict["data"]:
+            first_trace = fig_dict["data"][0]
+            unique_x = list(set(first_trace["x"]))
+            print(f"\nTRACE DEBUG --- First trace '{first_trace['name']}':")
+            print(f"  Total points: {len(first_trace['x'])}")
+            print(f"  Unique X categories: {unique_x}\n")
+
         return JSONResponse(content={"type": "plot", "data": json.loads(fig.to_json())})
 
     except Exception as e:
