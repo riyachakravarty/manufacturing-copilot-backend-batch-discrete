@@ -528,6 +528,9 @@ def qcut_boxplot(columns: list[str], target: str, quantiles: int ):
         # Add x-axis title only for bottom subplot
         fig.update_xaxes(title_text=f"Quantile bins of {target}", row=len(columns), col=1)
 
+        # ✅ Serialize safely
+        fig_json = json.loads(json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder))
+
         # ===== Debugging Section =====
         fig_json = fig.to_json()
         #fig_dict = json.loads(fig_json)
@@ -544,7 +547,13 @@ def qcut_boxplot(columns: list[str], target: str, quantiles: int ):
             print("   y length:", len(trace.get("y", [])))
         print("=== End of Debug ===")
 
-        return JSONResponse(content=fig_dict)
+       return JSONResponse(
+            content={
+                "type": "plot",
+                "data": fig_json.get("data", []),
+                "layout": fig_json.get("layout", {}),
+            }
+        )
 
         #return JSONResponse(content={"type": "plot", "data": json.loads(fig.to_json())})
 
