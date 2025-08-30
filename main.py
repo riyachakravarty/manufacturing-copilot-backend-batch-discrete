@@ -530,12 +530,12 @@ def qcut_boxplot(columns: list[str], target: str, quantiles: int ):
         fig.update_xaxes(title_text=f"Quantile bins of {target}", row=len(columns), col=1)
 
         # ✅ Serialize safely
-        fig_json = json.loads(json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder))
+        fig_dict = fig.to_plotly_json()
 
         # ===== Debugging Section =====
         #fig_json = fig.to_json()
         #fig_dict = json.loads(fig_json)
-        fig_dict = fig.to_dict()
+        #fig_dict = fig.to_dict()
         print("=== Backend Debug: Q-cut Box Plot ===")
         print("Figure type:", type(fig))
         print("Keys in figure dict:", fig_dict.keys())
@@ -548,13 +548,7 @@ def qcut_boxplot(columns: list[str], target: str, quantiles: int ):
             print("   y length:", len(trace.get("y", [])))
         print("=== End of Debug ===")
 
-        return JSONResponse(
-            content={
-                "type": "plot",
-                "data": fig_json.get("data", []),
-                "layout": fig_json.get("layout", {}),
-            }
-        )
+        return JSONResponse(content=fig_dict)
 
         #return JSONResponse(content={"type": "plot", "data": json.loads(fig.to_json())})
 
