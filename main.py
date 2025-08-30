@@ -522,7 +522,7 @@ def qcut_boxplot(columns: list[str], target: str, quantiles: int ):
 
         fig.update_layout(
             title_text=f"Specialized Q-cut Box Plots (Target: {target}, Quantiles: {quantiles})",
-            height=400 * len(columns), width=1200, showlegend=False,
+            height=400 * len(columns), width=600, showlegend=False,
             xaxis_title=f"Quantile bins of {target}"
         )
 
