@@ -547,7 +547,7 @@ def qcut_boxplot(columns: list[str], target: str, quantiles: int ):
             print("   y length:", len(trace.get("y", [])))
         print("=== End of Debug ===")
 
-       return JSONResponse(
+        return JSONResponse(
             content={
                 "type": "plot",
                 "data": fig_json.get("data", []),
