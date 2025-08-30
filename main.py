@@ -15,6 +15,7 @@ from langchain.llms import OpenAI
 from scipy.stats import zscore
 from langchain_community.llms import OpenAI  # updated import
 from pydantic import BaseModel
+import plotly
 
 
 app = FastAPI()
