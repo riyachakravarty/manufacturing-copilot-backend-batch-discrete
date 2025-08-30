@@ -525,7 +525,24 @@ def qcut_boxplot(columns: list[str], target: str, quantiles: int ):
             xaxis_title=f"Quantile bins of {target}"
         )
 
-        return JSONResponse(content={"type": "plot", "data": json.loads(fig.to_json())})
+        # ===== Debugging Section =====
+        fig_json = fig.to_json()
+        fig_dict = json.loads(fig_json)
+        print("=== Backend Debug: Q-cut Box Plot ===")
+        print("Figure type:", type(fig))
+        print("Keys in figure dict:", fig_dict.keys())
+        print("Number of traces:", len(fig_dict.get("data", [])))
+        for idx, trace in enumerate(fig_dict.get("data", [])):
+            print(f"Trace {idx}:")
+            print("   type:", trace.get("type"))
+            print("   name:", trace.get("name"))
+            print("   x length:", len(trace.get("x", [])))
+            print("   y length:", len(trace.get("y", [])))
+        print("=== End of Debug ===")
+
+        return JSONResponse(content={"type": "plot", "data": fig_dict})
+
+        #return JSONResponse(content={"type": "plot", "data": json.loads(fig.to_json())})
 
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
