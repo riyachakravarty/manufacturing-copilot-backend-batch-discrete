@@ -476,7 +476,7 @@ class QcutRequest(BaseModel):
     columns: list[str]
     target: str
     quantiles: int = 4
-    
+
 @app.post("/eda/qcut_boxplot")
 def qcut_boxplot(request: QcutRequest):
     """
@@ -485,88 +485,47 @@ def qcut_boxplot(request: QcutRequest):
     One subplot per selected column (stacked)
     """
     global augmented_df, uploaded_df
-    df_src = augmented_df if augmented_df is not None else uploaded_df
-    if df_src is None:
+    df = augmented_df if augmented_df is not None else uploaded_df
+    if df is None:
         return JSONResponse(content={"error": "No data uploaded"}, status_code=400)
 
     target = request.target
     columns = request.columns or []
     quantiles = int(request.quantiles or 4)
-
-    if not columns:
-        return JSONResponse(content={"error": "No columns provided"}, status_code=400)
-    if target not in df_src.columns:
-        return JSONResponse(content={"error": f"Target '{target}' not found"}, status_code=400)
+    df = uploaded_df.copy()
 
     try:
-        # work on a copy
-        df = df_src.copy()
+        # Create quantile bins
+        df['quantile_bin'], bins = pd.qcut(df[target], q=quantiles, retbins=True, duplicates="drop")
 
-        # make quantile bins + readable labels
-        df["__qbin__"], _ = pd.qcut(df[target], q=quantiles, retbins=True, duplicates="drop")
-        # fill rows where target is NaN -> label as "Missing"
-        cat = df["__qbin__"].astype("category")
-        cats = list(cat.cat.categories)
-        labels = [f"Q{i+1}" for i in range(len(cats))]
-        mapping = {iv: lab for iv, lab in zip(cats, labels)}
-        df["__qlabel__"] = cat.map(mapping)
-        df.loc[df["__qlabel__"].isna(), "__qlabel__"] = "Missing"
-        # final category order (Missing last if it exists)
-        bin_labels = labels + (["Missing"] if "Missing" in df["__qlabel__"].values else [])
+        # Build labels like Q1: (50.2, 65.4]
+        unique_bins = df['quantile_bin'].cat.categories
+        bin_labels = [f"Q{i+1}: {str(interval)}" for i, interval in enumerate(unique_bins)]
+        
+        # Map each row’s bin to the combined label
+        bin_mapping = {interval: label for interval, label in zip(unique_bins, bin_labels)}
+        df['quantile_label'] = df['quantile_bin'].map(bin_mapping)
 
-        # build subplots (NO shared x-axes)
-        fig = make_subplots(
-            rows=len(columns),
-            cols=1,
-            vertical_spacing=0.12,
-            subplot_titles=[f"{col} vs {target} Quantiles" for col in columns],
-        )
+        fig = make_subplots(rows=len(columns), cols=1, subplot_titles=columns)
 
-        # add one grouped box trace per column
         for i, col in enumerate(columns, start=1):
-            if col not in df.columns:
-                continue
-            y_vals = pd.to_numeric(df[col], errors="coerce")
-            mask = y_vals.notna() & df["__qlabel__"].notna()
-            x_vals = df.loc[mask, "__qlabel__"]
-            y_vals = y_vals.loc[mask]
-
             fig.add_trace(
                 go.Box(
-                    x=x_vals.astype(str).tolist(),
-                    y=y_vals.astype(float).tolist(),
+                    x=df['quantile_label'],
+                    y=df[col],
                     name=col,
-                    boxmean="sd",
+                    boxmean="sd"
                 ),
                 row=i, col=1
             )
-            fig.update_yaxes(title_text=col, row=i, col=1)
 
-        # layout
         fig.update_layout(
-            title_text=f"Specialized Q-cut Box Plots grouped by {target} quantiles ({quantiles} bins)",
-            showlegend=False,
-            height=max(350, 360 * len(columns)),
-            width=1200,
-            margin=dict(l=60, r=30, t=60, b=60),
-            boxmode="group",
+            title_text=f"Specialized Q-cut Box Plots (Target: {target}, Quantiles: {quantiles})",
+            height=400 * len(columns), width=1200, showlegend=False,
+            xaxis_title=f"Quantile bins of {target}"
         )
-
-        # CRITICAL: un-match axes and force categorical settings on EVERY row
-        for i in range(1, len(columns) + 1):
-            xa = f"xaxis{i}" if i > 1 else "xaxis"
-            # ensure axis object exists then update
-            fig.layout[xa].update(
-                matches=None,                 # break any matching
-                showticklabels=True,
-                type="category",
-                categoryorder="array",
-                categoryarray=bin_labels,
-                title=dict(text=f"{target} Quantiles"),
-            )
 
         return JSONResponse(content={"type": "plot", "data": json.loads(fig.to_json())})
 
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
-
