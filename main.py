@@ -532,7 +532,7 @@ def qcut_boxplot(columns: list[str], target: str, quantiles: int ):
         fig_json = json.loads(json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder))
 
         # ===== Debugging Section =====
-        fig_json = fig.to_json()
+        #fig_json = fig.to_json()
         #fig_dict = json.loads(fig_json)
         fig_dict = fig.to_dict()
         print("=== Backend Debug: Q-cut Box Plot ===")
