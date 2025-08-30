@@ -478,7 +478,7 @@ class QcutRequest(BaseModel):
     quantiles: int = 4
 
 @app.post("/eda/qcut_boxplot")
-def qcut_boxplot(request: QcutRequest):
+def qcut_boxplot(columns: list[str], target: str, quantiles: int ):
     """
     X-axis = target quantile labels (Q1..Qk) repeated per row
     Y-axis = values of each selected column
@@ -489,10 +489,10 @@ def qcut_boxplot(request: QcutRequest):
     if df is None:
         return JSONResponse(content={"error": "No data uploaded"}, status_code=400)
 
-    target = request.target
-    columns = request.columns or []
-    quantiles = int(request.quantiles or 4)
-    df = uploaded_df.copy()
+    #target = request.target
+    #columns = request.columns or []
+    #quantiles = int(request.quantiles or 4)
+    df = df.copy()
 
     try:
         # Create quantile bins
