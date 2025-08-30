@@ -506,7 +506,7 @@ def qcut_boxplot(columns: list[str], target: str, quantiles: int ):
         bin_mapping = {interval: label for interval, label in zip(unique_bins, bin_labels)}
         df['quantile_label'] = df['quantile_bin'].map(bin_mapping)
 
-        fig = make_subplots(rows=len(columns), cols=1, subplot_titles=columns)
+        fig = make_subplots(rows=len(columns), cols=1, subplot_titles=columns, shared_xaxes=True)
 
         for i, col in enumerate(columns, start=1):
             fig.add_trace(
@@ -524,6 +524,9 @@ def qcut_boxplot(columns: list[str], target: str, quantiles: int ):
             height=400 * len(columns), width=1200, showlegend=False,
             xaxis_title=f"Quantile bins of {target}"
         )
+
+        # Add x-axis title only for bottom subplot
+        fig.update_xaxes(title_text=f"Quantile bins of {target}", row=len(columns), col=1)
 
         # ===== Debugging Section =====
         fig_json = fig.to_json()
