@@ -473,11 +473,6 @@ async def chat(request: Request):
         return JSONResponse(content={"type": "text", "data": f"Error: {e}"}, status_code=500)
 
 ########################## Exploratory data analysis tab ##########################################
-class QcutRequest(BaseModel):
-    columns: list[str]
-    target: str
-    quantiles: int = 4
-
 @app.post("/eda/qcut_boxplot")
 def qcut_boxplot(columns: list[str], target: str, quantiles: int ):
     """
@@ -490,9 +485,6 @@ def qcut_boxplot(columns: list[str], target: str, quantiles: int ):
     if df is None:
         return JSONResponse(content={"error": "No data uploaded"}, status_code=400)
 
-    #target = request.target
-    #columns = request.columns or []
-    #quantiles = int(request.quantiles or 4)
     df = df.copy()
 
     try:
