@@ -524,8 +524,15 @@ def qcut_boxplot(columns: list[str], target: str, quantiles: int ):
         #fig.update_xaxes(title_text=f"Quantile bins of {target}", row=len(columns), col=1
 
         # Add x-axis title for each subplot
+        #for i in range(1, len(columns) + 1):
+         #   fig.update_xaxes(title_text=f"Quantile bins of {target}", row=i, col=1)
+
         for i in range(1, len(columns) + 1):
-            fig.update_xaxes(title_text=f"Quantile bins of {target}", row=i, col=1)
+            fig.update_xaxes(
+                tickmode="array",
+                tickvals=bin_labels,   # categories in order
+                ticktext=bin_labels,   # display labels as-is
+                row=i, col=1)
 
         # ✅ Serialize safely
         #fig_dict = fig.to_plotly_json()
