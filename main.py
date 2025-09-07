@@ -501,7 +501,9 @@ def qcut_boxplot(columns: list[str], target: str, quantiles: int ):
         df['quantile_label'] = df['quantile_bin'].map(bin_mapping)
         df['quantile_label'] = pd.Categorical(df['quantile_label'],categories=bin_labels,  ordered=True) # preserves Q1, Q2, … order
 
-        fig = make_subplots(rows=len(columns), cols=1, subplot_titles=columns, shared_xaxes=True)
+        fig = make_subplots(rows=len(columns), cols=1, subplot_titles=columns, 
+                            #shared_xaxes=True
+                           )
 
         for i, col in enumerate(columns, start=1):
             fig.add_trace(
