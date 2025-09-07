@@ -486,6 +486,7 @@ def qcut_boxplot(columns: list[str], target: str, quantiles: int ):
         return JSONResponse(content={"error": "No data uploaded"}, status_code=400)
 
     df = df.copy()
+    df = df.sort_values(by=target, ascending=True).reset_index(drop=True)
 
     try:
         # Create quantile bins
