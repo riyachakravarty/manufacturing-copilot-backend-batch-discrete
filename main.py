@@ -494,7 +494,6 @@ def qcut_boxplot(columns: list[str], target: str, quantiles: int ):
 
         # Build labels like Q1: (50.2, 65.4]
         unique_bins = df['quantile_bin'].cat.categories
-        #bin_labels = [f"Q{i+1}: {str(interval)}" for i, interval in enumerate(unique_bins)]
         bin_labels = [f"Q{i+1}: ({interval.left:.2f}, {interval.right:.2f}]" for i, interval in enumerate(unique_bins)]
         
         # Map each row’s bin to the combined label
@@ -561,3 +560,78 @@ def qcut_boxplot(columns: list[str], target: str, quantiles: int ):
 
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
+
+#---------------------------------------------------------------------------------------------#
+
+class DualBoxPlotRequest(BaseModel):
+    column_x: str
+    column_y: str
+    plot_type: str  # "auto" or "quantile"
+    num_bins_quantiles: int | None = None
+
+@app.post("/eda/dualaxes_boxplot")
+def dualaxes_boxplot(req: DualBoxPlotRequest):
+    
+    global augmented_df, uploaded_df
+    df = augmented_df if augmented_df is not None else uploaded_df
+    if df is None:
+        return JSONResponse(content={"error": "No data uploaded"}, status_code=400)
+
+    col_x, col_y = req.column_x, req.column_y
+    plot_type, num = req.plot_type, req.num_bins_quantiles
+
+    df = df.copy()
+    df = df.sort_values(by=col_x, ascending=True).reset_index(drop=True)
+    
+    if plot_type == "quantile":
+        try:
+            df["x_bin"] = pd.qcut(df[col_x], q=num, duplicates="drop")
+            group_col = "x_bin"
+        except Exception as e:
+            return {"error": f"Quantile binning failed: {str(e)}"}
+    else:
+        # auto: use ranges of X (bin into 5 automatically)
+        bins = num if num is not None else 5
+        df["x_bin"] = pd.cut(df[col_x], bins=num)
+        group_col = "x_bin"
+    
+    # Build labels like Q1: (50.2, 65.4]
+    unique_bins = df["x_bin"].cat.categories
+    bin_labels = [f"Q{i+1}: ({interval.left:.2f}, {interval.right:.2f}]" for i, interval in enumerate(unique_bins)]
+            
+    # Map each row’s bin to the combined label
+    bin_mapping = {interval: label for interval, label in zip(unique_bins, bin_labels)}
+    df["x_bin"] = df["x_bin"].map(bin_mapping)
+    df["x_bin"] = pd.Categorical(df["x_bin"],categories=bin_labels,  ordered=True) # preserves Q1, Q2, … order
+
+    fig = go.Figure()
+    fig.add_trace(go.Box(
+        x=df["x_bin"],
+        y=df[col_y],
+        name=col_y,
+        boxmean="sd"))
+
+    fig.update_layout(
+        title_text=f"Dual Axes Box Plots (X: {col_x}, Quantiles: {num})",
+        height=400, width=600, showlegend=False,
+        xaxis_title=f"{col_x}"
+    )
+    # ===== Debugging Section =====
+    fig_json = fig.to_json()
+    fig_dict = json.loads(fig_json)
+    print("=== Backend Debug: Dual Axes Box Plot ===")
+    print("Figure type:", type(fig))
+    print("Keys in figure dict:", fig_dict.keys())
+    print("Number of traces:", len(fig_dict.get("data", [])))
+    for idx, trace in enumerate(fig_dict.get("data", [])):
+        print(f"Trace {idx}:")
+        print("   type:", trace.get("type"))
+        print("   name:", trace.get("name"))
+        print("   x length:", len(trace.get("x", [])))
+        print("   y length:", len(trace.get("y", [])))
+    print("=== End of Debug ===")
+
+    return JSONResponse(content={"type": "plot", "data": json.loads(fig.to_json())})
+
+except Exception as e:
+    return JSONResponse(content={"error": str(e)}, status_code=500)
