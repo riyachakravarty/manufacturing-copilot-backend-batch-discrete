@@ -685,6 +685,20 @@ def correlation_analysis(req: CorrelationRequest):
         height=600,
     )
 
+    # ===== Debugging Section =====
+        fig_json = fig.to_json()
+        fig_dict = json.loads(fig_json)
+        print("=== Backend Debug: Correlation Analysis ===")
+        print("Figure type:", type(fig))
+        print(fig_json)
+        print("Keys in figure dict:", fig_dict.keys())
+        print("Number of traces:", len(fig_dict.get("data", [])))
+        for idx, trace in enumerate(fig_dict.get("data", [])):
+            print(f"Trace {idx}:")
+            print("   type:", trace.get("type"))
+            print("   name:", trace.get("name"))
+        print("=== End of Debug ===")
+
     return JSONResponse(
         content={
             "type": "plot",
