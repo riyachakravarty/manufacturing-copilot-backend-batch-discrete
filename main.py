@@ -631,8 +631,7 @@ def dualaxes_boxplot(req: DualBoxPlotRequest):
             print("   y length:", len(trace.get("y", [])))
         print("=== End of Debug ===")
     
-        #return JSONResponse(content={"type": "plot", "data": json.loads(fig.to_json())})
-        return JSONResponse(content={"type": "plot", "data": json.loads(result)})
+        return JSONResponse(content={"type": "plot", "data": json.loads(fig.to_json())})
 
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
