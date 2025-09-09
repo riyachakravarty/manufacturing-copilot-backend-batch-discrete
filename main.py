@@ -621,6 +621,7 @@ def dualaxes_boxplot(req: DualBoxPlotRequest):
         fig_dict = json.loads(fig_json)
         print("=== Backend Debug: Dual Axes Box Plot ===")
         print("Figure type:", type(fig))
+        print(fig_json)
         print("Keys in figure dict:", fig_dict.keys())
         print("Number of traces:", len(fig_dict.get("data", [])))
         for idx, trace in enumerate(fig_dict.get("data", [])):
