@@ -636,3 +636,59 @@ def dualaxes_boxplot(req: DualBoxPlotRequest):
 
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
+
+#-----------------------------------------------------------------------------------------------------#
+class CorrelationRequest(BaseModel):
+    columns: list[str]
+    method: str  # "pearson", "spearman", "kendall"
+
+@app.post("/eda/correlation_analysis")
+def correlation_analysis(req: CorrelationRequest):
+    global augmented_df, uploaded_df
+    df = augmented_df if augmented_df is not None else uploaded_df
+
+    if df is None:
+        return JSONResponse(content={"error": "No data uploaded"}, status_code=400)
+
+    selected_cols = req.columns
+    method = req.method.lower()
+
+    if method not in ["pearson", "spearman", "kendall"]:
+        return JSONResponse(content={"error": "Invalid correlation method"}, status_code=400)
+
+    try:
+        # Keep only numeric selected cols
+        df_selected = df[selected_cols].select_dtypes(include="number")
+        corr_matrix = df_selected.corr(method=method)
+    except Exception as e:
+        return JSONResponse(content={"error": f"Correlation failed: {str(e)}"}, status_code=500)
+
+    # Plotly Heatmap
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=corr_matrix.values,
+            x=corr_matrix.columns,
+            y=corr_matrix.columns,
+            colorscale="RdBu",
+            zmin=-1,
+            zmax=1,
+            colorbar=dict(title="Correlation"),
+        )
+    )
+
+    # Add title and layout
+    fig.update_layout(
+        title=f"{method.capitalize()} Correlation Matrix",
+        xaxis=dict(side="bottom"),
+        yaxis=dict(autorange="reversed"),
+        width=600,
+        height=600,
+    )
+
+    return JSONResponse(
+        content={
+            "type": "plot",
+            "data": json.loads(fig.to_json()),
+            "matrix": corr_matrix.round(2).to_dict()
+        }
+    )
