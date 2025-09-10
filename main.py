@@ -795,8 +795,8 @@ def continuous_range_analysis(req: ContinuousRangeRequest):
             end_time = df[datetime_col].iloc[-1]
             if (end_time - start_time) >= pd.Timedelta(minutes=min_duration):
                 continuous_ranges.append({
-                    "start": start_time,
-                    "end": end_time,
+                    "start": start_time.isoformat(),
+                    "end": end_time.isoformat(),
                     "duration_min": (end_time - start_time).total_seconds() / 60,
                     "start_value": start_val,
                     "lower": lower,
