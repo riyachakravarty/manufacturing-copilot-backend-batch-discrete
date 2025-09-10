@@ -707,14 +707,15 @@ def correlation_analysis(req: CorrelationRequest):
         }
     )
 #-----------------------------------------------------------------------------------------------------------#
+class ContinuousRangeRequest(BaseModel):
+    target: str
+    min_duration: int
+    lower_pct: float
+    upper_pct: float
+    max_break: int
+    
 @app.post("/eda/continuous_range")
-def continuous_range_analysis(
-    target: str,
-    min_duration: int,
-    lower_pct: float,
-    upper_pct: float,
-    max_break: int,
-):
+def continuous_range_analysis(req: ContinuousRangeRequest):
     """
     Detect continuous ranges where target stays within [start*(1-lower_pct), start*(1+upper_pct)]
     for at least `min_duration` minutes, allowing gaps of up to `max_break` minutes.
