@@ -779,12 +779,12 @@ def continuous_range_analysis(req: ContinuousRangeRequest):
                 end_time = df.loc[i - 1, datetime_col]
                 if (end_time - start_time) >= pd.Timedelta(minutes=min_duration):
                     continuous_ranges.append({
-                        "start": start_time,
-                        "end": end_time,
-                        "duration_min": (end_time - start_time).total_seconds() / 60,
-                        "start_value": start_val,
-                        "lower": lower,
-                        "upper": upper,
+                        "start": start_time.isoformat(),
+                        "end": end_time.isoformat(),
+                        "duration_min": float((end_time - start_time).total_seconds() / 60),
+                        "start_value": float(start_val),
+                        "lower": float(lower),
+                        "upper": float(upper),
                     })
                 in_range = False
                 start_time, start_val, lower, upper = None, None, None, None
@@ -797,10 +797,10 @@ def continuous_range_analysis(req: ContinuousRangeRequest):
                 continuous_ranges.append({
                     "start": start_time.isoformat(),
                     "end": end_time.isoformat(),
-                    "duration_min": (end_time - start_time).total_seconds() / 60,
-                    "start_value": start_val,
-                    "lower": lower,
-                    "upper": upper,
+                    "duration_min": float((end_time - start_time).total_seconds() / 60),
+                    "start_value": float(start_val),
+                    "lower": float(lower),
+                    "upper": float(upper),
                 })
 
         fig = go.Figure()
