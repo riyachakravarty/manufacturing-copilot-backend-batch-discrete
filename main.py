@@ -817,6 +817,9 @@ def continuous_range_analysis(req: ContinuousRangeRequest):
                 annotation_text=f"Range {i+1}"
             )
 
+        fig.update_layout(title=f"Continuous Range Analysis: '{target}' Over Time", 
+                          xaxis_title='Date_time', yaxis_title=target, hovermode="x unified", height=500, width=700)
+
         return JSONResponse(content={
             "type": "plot",
             "data": json.loads(fig.to_json()),
