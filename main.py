@@ -715,6 +715,10 @@ def continuous_range_analysis(
     upper_pct: float,
     max_break: int,
 ):
+    """
+    Detect continuous ranges where target stays within [start*(1-lower_pct), start*(1+upper_pct)]
+    for at least `min_duration` minutes, allowing gaps of up to `max_break` minutes.
+    """
     try:
         global augmented_df, uploaded_df
         df = augmented_df if augmented_df is not None else uploaded_df
@@ -724,7 +728,7 @@ def continuous_range_analysis(
         # Assume default time column
         datetime_col='Date_time'
         if datetime_col not in df.columns:
-            return JSONResponse(content={"error": f"Default time column '{Date_time}' not found in dataset"}, status_code=400)
+            return JSONResponse(content={"error": f"Default time column '{datetime_col}' not found in dataset"}, status_code=400)
 
         df = df.copy()
         df[datetime_col] = pd.to_datetime(df[datetime_col])
@@ -765,8 +769,9 @@ def continuous_range_analysis(
                 step = (t - df.loc[i - 1, datetime_col]) if i > 0 else freq
                 out_of_range_duration += step
 
+            # Break condition
             if out_of_range_duration >= pd.Timedelta(minutes=max_break):
-                end_time = t
+                end_time = df.loc[i - 1, datetime_col]
                 if (end_time - start_time) >= pd.Timedelta(minutes=min_duration):
                     continuous_ranges.append({
                         "start": start_time,
@@ -780,6 +785,7 @@ def continuous_range_analysis(
                 start_time, start_val, lower, upper = None, None, None, None
                 out_of_range_duration = pd.Timedelta(0)
 
+        # Handle unfinished range at end
         if in_range and start_time is not None:
             end_time = df[datetime_col].iloc[-1]
             if (end_time - start_time) >= pd.Timedelta(minutes=min_duration):
