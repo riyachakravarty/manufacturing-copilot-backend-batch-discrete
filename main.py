@@ -706,3 +706,111 @@ def correlation_analysis(req: CorrelationRequest):
             "matrix": corr_matrix.round(2).to_dict()
         }
     )
+#-----------------------------------------------------------------------------------------------------------#
+@app.post("/eda/continuous_range")
+def continuous_range_analysis(
+    target: str,
+    min_duration: int,
+    lower_pct: float,
+    upper_pct: float,
+    max_break: int,
+):
+    try:
+        global augmented_df, uploaded_df
+        df = augmented_df if augmented_df is not None else uploaded_df
+        if df is None:
+            return JSONResponse(content={"error": "No data uploaded"}, status_code=400)
+
+        # Assume default time column
+        datetime_col='Date_time'
+        if datetime_col not in df.columns:
+            return JSONResponse(content={"error": f"Default time column '{Date_time}' not found in dataset"}, status_code=400)
+
+        df = df.copy()
+        df[datetime_col] = pd.to_datetime(df[datetime_col])
+        df = df.sort_values(datetime_col).reset_index(drop=True)
+
+        # Estimate base frequency
+        diffs = df[datetime_col].diff().dropna()
+        inferred_freq = diffs.mode().iloc[0] if not diffs.empty else pd.Timedelta(hours=1)
+
+        continuous_ranges = []
+        in_range = False
+        start_time, start_val = None, None
+        lower, upper = None, None
+        out_of_range_duration = pd.Timedelta(0)
+
+        for i in range(len(df)):
+            t = df.loc[i, datetime_col]
+            val = df.loc[i, target]
+
+            #start a new continuous range
+            if not in_range:
+                if not pd.isna(val):
+                    start_time = t
+                    start_val = val
+                    lower = start_val * (1 - lower_pct)
+                    upper = start_val * (1 + upper_pct)
+                    in_range = True
+                    out_of_range_duration = pd.Timedelta(0)
+                continue
+
+            #If value goes out of range
+            if pd.isna(val):
+                step = (t - df.loc[i - 1, datetime_col]) if i > 0 else inferred_freq
+                out_of_range_duration += step
+            elif lower <= val <= upper:
+                out_of_range_duration = pd.Timedelta(0)
+            else:
+                step = (t - df.loc[i - 1, datetime_col]) if i > 0 else freq
+                out_of_range_duration += step
+
+            if out_of_range_duration >= pd.Timedelta(minutes=max_break):
+                end_time = t
+                if (end_time - start_time) >= pd.Timedelta(minutes=min_duration):
+                    continuous_ranges.append({
+                        "start": start_time,
+                        "end": end_time,
+                        "duration_min": (end_time - start_time).total_seconds() / 60,
+                        "start_value": start_val,
+                        "lower": lower,
+                        "upper": upper,
+                    })
+                in_range = False
+                start_time, start_val, lower, upper = None, None, None, None
+                out_of_range_duration = pd.Timedelta(0)
+
+        if in_range and start_time is not None:
+            end_time = df[datetime_col].iloc[-1]
+            if (end_time - start_time) >= pd.Timedelta(minutes=min_duration):
+                continuous_ranges.append({
+                    "start": start_time,
+                    "end": end_time,
+                    "duration_min": (end_time - start_time).total_seconds() / 60,
+                    "start_value": start_val,
+                    "lower": lower,
+                    "upper": upper,
+                })
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=df[datetime_col], y=df[target],
+            mode="lines", name=target
+        ))
+
+        for i, r in enumerate(continuous_ranges):
+            fig.add_vrect(
+                x0=r["start"], x1=r["end"],
+                fillcolor="green", opacity=0.2,
+                line_width=0,
+                annotation_text=f"Range {i+1}"
+            )
+
+        return JSONResponse(content={
+            "type": "plot",
+            "data": fig.to_plotly_json(),
+            "ranges": continuous_ranges
+        })
+
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
