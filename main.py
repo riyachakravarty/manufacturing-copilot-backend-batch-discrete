@@ -726,6 +726,10 @@ def continuous_range_analysis(req: ContinuousRangeRequest):
         if df is None:
             return JSONResponse(content={"error": "No data uploaded"}, status_code=400)
 
+        target, min_duration = req.target, req.min_duration
+        lower_pct, upper_pct = req.lower_pct, req.upper_pct
+        max_break=req.max_break
+
         # Assume default time column
         datetime_col='Date_time'
         if datetime_col not in df.columns:
