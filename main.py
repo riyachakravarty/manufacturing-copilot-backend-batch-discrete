@@ -814,7 +814,7 @@ def continuous_range_analysis(
 
         return JSONResponse(content={
             "type": "plot",
-            "data": fig.to_plotly_json(),
+            "data": json.loads(fig.to_json()),
             "ranges": continuous_ranges
         })
 
