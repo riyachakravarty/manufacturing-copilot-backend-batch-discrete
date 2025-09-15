@@ -16,6 +16,7 @@ from scipy.stats import zscore
 from langchain_community.llms import OpenAI  # updated import
 from pydantic import BaseModel
 import plotly
+import numpy as np
 
 
 app = FastAPI()
@@ -820,10 +821,189 @@ def continuous_range_analysis(req: ContinuousRangeRequest):
         fig.update_layout(title=f"Continuous Range Analysis: '{target}' Over Time", 
                           xaxis_title='Date_time', yaxis_title=target, hovermode="x unified", height=500, width=700)
 
+        last_continuous_ranges = continuous_ranges
+
         return JSONResponse(content={
             "type": "plot",
             "data": json.loads(fig.to_json()),
             "ranges": continuous_ranges
+        })
+
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+#--------------------------------------------------------------------------------------------------------#
+class MultivariateRequestWithRanges(BaseModel):
+    columns: list[str]              # selected feature columns
+    mode: str                       # "Boxplot" or "Timeseries"
+    numMultiRanges: int             # number of top and bottom ranges
+    performanceDirection: str       # "higher" or "lower"
+    target: str                     # target column
+
+@app.post("/eda/multivariate")
+def multivariate_analysis_with_ranges(req: MultivariateRequestWithRanges):
+    """
+    Build multivariate plots using precomputed continuous ranges.
+    """
+    try:
+        global augmented_df, uploaded_df
+        df = augmented_df if augmented_df is not None else uploaded_df
+        if df is None:
+            return JSONResponse(content={"error": "No data uploaded"}, status_code=400)
+
+        # validations
+        if req.target not in df.columns:
+            return JSONResponse(content={"error": f"Target column '{req.target}' not found"}, status_code=400)
+        if not req.columns:
+            return JSONResponse(content={"error": "No columns provided"}, status_code=400)
+        missing_cols = [c for c in req.columns if c not in df.columns]
+        if missing_cols:
+            return JSONResponse(content={"error": f"Selected columns not in dataset: {missing_cols}"}, status_code=400)
+        # Assume default time column
+        datetime_col='Date_time'
+        if datetime_col not in df.columns:
+            return JSONResponse(content={"error": f"Default time column '{datetime_col}' not found in dataset"}, status_code=400)
+
+        df = df.copy()
+        df[datetime_col] = pd.to_datetime(df[datetime_col])
+
+        if last_continuous_ranges is None:
+        return JSONResponse(
+            content={"error": "Continuous ranges not found. Please run continuous range analysis first."},
+            status_code=400
+        )
+
+        # --- compute median target per range ---
+        groups = []
+        for i, r in enumerate(last_continuous_ranges):
+            st = pd.to_datetime(r["start"])
+            en = pd.to_datetime(r["end"])
+            mask = (df[datetime_col] >= st) & (df[datetime_col] <= en)
+            slice_df = df.loc[mask].copy()
+            median_target = slice_df[req.target].median(skipna=True) if not slice_df.empty else np.nan
+            groups.append({
+                "group_id": i,
+                "start": st,
+                "end": en,
+                "duration_min": r.get("duration_min", float((en - st).total_seconds()/60)),
+                "median_target": float(median_target) if pd.notna(median_target) else None,
+                "df_slice": slice_df
+            })
+
+        # filter valid groups
+        groups = [g for g in groups if g["median_target"] is not None]
+        if not groups:
+            return JSONResponse(content={"error": "No valid continuous ranges with median target found"}, status_code=400)
+
+        # sort by median target
+        groups_sorted = sorted(groups, key=lambda x: x["median_target"])
+
+        # select top/bottom ranges based on performance direction
+        num = max(1, req.numMultiRanges)
+        if req.performanceDirection == "higher":
+            good_groups = sorted(groups_sorted, key=lambda x: x["median_target"], reverse=True)[:num]
+            bad_groups = groups_sorted[:num]
+        else:
+            good_groups = groups_sorted[:num]
+            bad_groups = sorted(groups_sorted, key=lambda x: x["median_target"], reverse=True)[:num]
+
+        good_ids = set([g["group_id"] for g in good_groups])
+        bad_ids = set([g["group_id"] for g in bad_groups])
+        selected_ids = list(good_ids.union(bad_ids))
+        sel_groups_meta = [g for g in groups_sorted if g["group_id"] in selected_ids]
+        sel_groups_meta = sorted(sel_groups_meta, key=lambda x: x["median_target"])
+
+        # labels & colors
+        def format_label(g):
+            st, en = g["start"], g["end"]
+            dur = int((en - st).total_seconds())
+            if dur >= 3600:
+                dur_label = f"{dur//3600}h{(dur%3600)//60}m"
+            elif dur >= 60:
+                dur_label = f"{dur//60}m"
+            else:
+                dur_label = f"{dur}s"
+            return f"{st.strftime('%Y-%m-%d %H:%M')} / {dur_label}"
+
+        x_labels = [format_label(g) for g in sel_groups_meta]
+        x_group_ids = [g["group_id"] for g in sel_groups_meta]
+        classification = {}
+        for gid in x_group_ids:
+            if gid in good_ids and gid in bad_ids:
+                classification[gid] = "neutral"
+            elif gid in good_ids:
+                classification[gid] = "good"
+            elif gid in bad_ids:
+                classification[gid] = "bad"
+            else:
+                classification[gid] = "neutral"
+        color_map = {"good": "green", "bad": "red", "neutral": "gray"}
+        gid_to_slice = {g["group_id"]: g["df_slice"] for g in sel_groups_meta}
+
+        # --- build subplots ---
+        n_rows = 1 + len(req.columns)
+        subplot_titles = ["Target: " + req.target] + req.columns
+        fig = make_subplots(rows=n_rows, cols=1, shared_xaxes=True,
+                            vertical_spacing=0.06, subplot_titles=subplot_titles)
+
+        if req.mode.lower().startswith("box"):
+            for row_idx, col in enumerate([req.target] + req.columns, start=1):
+                for gid, xlab in zip(x_group_ids, x_labels):
+                    slice_df = gid_to_slice.get(gid)
+                    if slice_df is None or slice_df.empty or col not in slice_df.columns:
+                        continue
+                    y = slice_df[col].dropna().values
+                    if len(y) == 0:
+                        continue
+                    fig.add_trace(
+                        go.Box(
+                            y=y,
+                            x=[xlab] * len(y),
+                            name=str(xlab),
+                            marker=dict(color=color_map.get(classification.get(gid, "neutral"))),
+                            boxmean=True,
+                            showlegend=False
+                        ),
+                        row=row_idx, col=1
+                    )
+        elif req.mode.lower().startswith("time"):
+            for row_idx, col in enumerate([req.target] + req.columns, start=1):
+                y_series = []
+                for gid in x_group_ids:
+                    slice_df = gid_to_slice.get(gid)
+                    if slice_df is None or slice_df.empty or col not in slice_df.columns:
+                        y_series.append(None)
+                    else:
+                        y_series.append(float(slice_df[col].median(skipna=True)))
+                fig.add_trace(
+                    go.Scatter(
+                        x=x_labels,
+                        y=y_series,
+                        mode="lines+markers",
+                        name=col,
+                        marker=dict(size=6),
+                        showlegend=False
+                    ),
+                    row=row_idx, col=1
+                )
+        else:
+            return JSONResponse(content={"error": f"Unsupported mode '{req.mode}'"}, status_code=400)
+
+        fig.update_layout(height=220*n_rows, margin=dict(t=70, b=120, l=80, r=20))
+        fig.update_xaxes(tickangle=-45)
+
+        return JSONResponse(content={
+            "type": "plot",
+            "data": json.loads(fig.to_json()),
+            "groups": [
+                {
+                    "group_id": g["group_id"],
+                    "start": g["start"].isoformat(),
+                    "end": g["end"].isoformat(),
+                    "duration_min": g["duration_min"],
+                    "median_target": g["median_target"]
+                } for g in sel_groups_meta
+            ]
         })
 
     except Exception as e:
