@@ -969,24 +969,26 @@ def multivariate_analysis_with_ranges(req: MultivariateRequestWithRanges):
                     )
         elif req.mode.lower().startswith("time"):
             for row_idx, col in enumerate([req.target] + req.columns, start=1):
-                y_series = []
                 for gid in x_group_ids:
+                    y_series = []
+                    x_series = []
                     slice_df = gid_to_slice.get(gid)
                     if slice_df is None or slice_df.empty or col not in slice_df.columns:
                         y_series.append(None)
                     else:
-                        y_series.append(float(slice_df[col].median(skipna=True)))
-                fig.add_trace(
-                    go.Scatter(
-                        x=x_labels,
-                        y=y_series,
-                        mode="lines+markers",
-                        name=col,
-                        marker=dict(size=6),
-                        showlegend=False
-                    ),
-                    row=row_idx, col=1
-                )
+                        y_series.append(slice_df[col])
+                        x_series.append(slice_df[datetime_col])
+                    fig.add_trace(
+                        go.Scatter(
+                            x=x_series,
+                            y=y_series,
+                            mode="lines+markers",
+                            name=col,
+                            marker=dict(color=color_map.get(classification.get(gid, "neutral"))),
+                            showlegend=False
+                        ),
+                        row=row_idx, col=1
+                    )
         else:
             return JSONResponse(content={"error": f"Unsupported mode '{req.mode}'"}, status_code=400)
 
