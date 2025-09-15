@@ -970,14 +970,17 @@ def multivariate_analysis_with_ranges(req: MultivariateRequestWithRanges):
         elif req.mode.lower().startswith("time"):
             for row_idx, col in enumerate([req.target] + req.columns, start=1):
                 for gid in x_group_ids:
-                    y_series = []
-                    x_series = []
                     slice_df = gid_to_slice.get(gid)
                     if slice_df is None or slice_df.empty or col not in slice_df.columns:
-                        y_series.append(None)
-                    else:
-                        y_series.append(slice_df[col])
-                        x_series.append(slice_df[datetime_col])
+                        continue
+                    # Ensure sorted by datetime
+                    slice_df = slice_df.sort_values(by=datetime_col)
+                    x_series = slice_df[datetime_col].tolist()
+                    y_series = slice_df[col].tolist()
+
+                    if len(x_series) == 0:
+                        continue
+                    
                     fig.add_trace(
                         go.Scatter(
                             x=x_series,
