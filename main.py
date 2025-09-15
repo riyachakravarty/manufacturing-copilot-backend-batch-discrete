@@ -31,6 +31,7 @@ app.add_middleware(
 
 uploaded_df = None
 augmented_df = None
+last_continuous_ranges = None    
 
 class PromptRequest(BaseModel):
     prompt: str
@@ -722,7 +723,7 @@ def continuous_range_analysis(req: ContinuousRangeRequest):
     for at least `min_duration` minutes, allowing gaps of up to `max_break` minutes.
     """
     try:
-        global augmented_df, uploaded_df
+        global augmented_df, uploaded_df, last_continuous_ranges
         df = augmented_df if augmented_df is not None else uploaded_df
         if df is None:
             return JSONResponse(content={"error": "No data uploaded"}, status_code=400)
@@ -846,7 +847,7 @@ def multivariate_analysis_with_ranges(req: MultivariateRequestWithRanges):
     Build multivariate plots using precomputed continuous ranges.
     """
     try:
-        global augmented_df, uploaded_df
+        global augmented_df, uploaded_df, last_continuous_ranges
         df = augmented_df if augmented_df is not None else uploaded_df
         if df is None:
             return JSONResponse(content={"error": "No data uploaded"}, status_code=400)
