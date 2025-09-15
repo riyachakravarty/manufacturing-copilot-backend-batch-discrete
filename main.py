@@ -868,9 +868,9 @@ def multivariate_analysis_with_ranges(req: MultivariateRequestWithRanges):
         df[datetime_col] = pd.to_datetime(df[datetime_col])
 
         if last_continuous_ranges is None:
-        return JSONResponse(
-            content={"error": "Continuous ranges not found. Please run continuous range analysis first."},
-            status_code=400
+            return JSONResponse(
+                content={"error": "Continuous ranges not found. Please run continuous range analysis first."},
+                status_code=400
         )
 
         # --- compute median target per range ---
