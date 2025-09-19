@@ -1097,10 +1097,17 @@ def custom_feature(req: CustomFeatureRequest):
         #features_raw_df = df  # update global
         augmented_df = df    # keep augmented version updated
 
+        if len(errors) == 0:
+            message = f"Feature '{feature_name}' created successfully with no errors."
+        elif len(errors) < len(df):
+            message = f"Feature '{feature_name}' created with {len(errors)} row errors."
+        else:
+            message = f"Feature '{feature_name}' could not be created. All rows failed."
+
         return {
-            "success": True if len(errors) < len(df) else False,
+            "success": True if len(errors) ==0 else False,
             "new_column": feature_name,
-            "message": f"Feature '{feature_name}' created successfully.",
+            "message": message,
             "errors": errors
         }
 
