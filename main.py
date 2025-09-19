@@ -396,7 +396,7 @@ def download_file():
         stream = StringIO()
         df_to_download.to_csv(stream, index=False)
         stream.seek(0)
-        return StreamingResponse(stream, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=treated_data.csv"})
+        return StreamingResponse(stream, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=latest_data.csv"})
     except Exception as e:
         return JSONResponse(content={"message": f"Download failed: {str(e)}"}, status_code=500)
 
