@@ -1070,12 +1070,37 @@ def custom_feature(req: CustomFeatureRequest):
                 errors.append(idx)
                 new_feature_values.append(None)
 
-        df["custom_feature"] = new_feature_values
-        features_raw_df = df  # update global
+# --- Generate a unique feature name ---
+        op_map = {"+": "plus", "-": "minus", "*": "times", "/": "div"}
+        parts = []
+        if col1:
+            parts.append(col1)
+        if col2 and f.get("op12"):
+            parts.append(op_map.get(f.get("op12"), f.get("op12")))
+            parts.append(col2)
+        if col3 and f.get("op23"):
+            parts.append(op_map.get(f.get("op23"), f.get("op23")))
+            parts.append(col3)
+
+        base_name = "custom_" + "_".join(parts) if parts else "feature_custom"
+        # sanitize name
+        base_name = re.sub(r'[^0-9a-zA-Z_]', "_", base_name)
+
+        feature_name = base_name
+        counter = 1
+        while feature_name in df.columns:
+            feature_name = f"{base_name}_{counter}"
+            counter += 1
+
+        # --- Assign new feature to DataFrame ---
+        df[feature_name] = new_feature_values
+        #features_raw_df = df  # update global
+        augmented_df = df    # keep augmented version updated
 
         return {
             "success": True if len(errors) < len(df) else False,
-            "new_column": "custom_feature",
+            "new_column": feature_name,
+            "message": f"Feature '{feature_name}' created successfully.",
             "errors": errors
         }
 
