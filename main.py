@@ -1026,7 +1026,7 @@ class CustomFeatureRequest(BaseModel):
 @app.post("/eda/custom_feature")
 def custom_feature(req: CustomFeatureRequest):
     try:
-        global augmented_df, uploaded_df
+        global augmented_df, uploaded_df, features_raw_df
         df = augmented_df if augmented_df is not None else uploaded_df
         if df is None:
             return JSONResponse(content={"error": "No data uploaded"}, status_code=400)
