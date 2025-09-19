@@ -31,7 +31,8 @@ app.add_middleware(
 
 uploaded_df = None
 augmented_df = None
-last_continuous_ranges = None    
+last_continuous_ranges = None
+features_raw_df = None
 
 class PromptRequest(BaseModel):
     prompt: str
@@ -1011,6 +1012,72 @@ def multivariate_analysis_with_ranges(req: MultivariateRequestWithRanges):
                 } for g in sel_groups_meta
             ]
         })
+
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+#######################################----Feature Engineering tab-------------###########################
+class CustomFeatureRequest(BaseModel):
+    column1: str | None = None
+    column2: str | None = None
+    column3: str | None = None
+    featureInputs: dict
+
+@app.post("/eda/custom_feature")
+def custom_feature(req: CustomFeatureRequest):
+    try:
+        global augmented_df, uploaded_df
+        df = augmented_df if augmented_df is not None else uploaded_df
+        if df is None:
+            return JSONResponse(content={"error": "No data uploaded"}, status_code=400)
+
+        df = df.copy()
+        errors = []
+
+        col1, col2, col3 = req.column1, req.column2, req.column3
+        f = req.featureInputs
+
+        # --- Build formula string exactly like frontend ---
+        formula = ""
+
+        if col1:
+            formula += f.get("beforeCol1", "") + f"({col1})" if f.get("beforeCol1") else col1
+
+        if col2:
+            formula += f" {f.get('op12','')} " if f.get("op12") else " "
+            formula += f"{f.get('between1and2','')}({col2})" if f.get("between1and2") else col2
+
+        if col3:
+            formula += f" {f.get('op23','')} " if f.get("op23") else " "
+            formula += f"{f.get('between2and3','')}({col3})" if f.get("between2and3") else col3
+
+        formula = formula.strip()
+
+        # --- Apply formula row by row ---
+        new_feature_values = []
+        for idx, row in df.iterrows():
+            try:
+                local_env = {
+                    col1: row[col1] if col1 else None,
+                    col2: row[col2] if col2 else None,
+                    col3: row[col3] if col3 else None,
+                    "log": np.log,
+                    "sqrt": np.sqrt
+                }
+                val = eval(formula, {"__builtins__": {}}, local_env)
+                new_feature_values.append(val)
+            except Exception:
+                errors.append(idx)
+                new_feature_values.append(None)
+
+        df["custom_feature"] = new_feature_values
+        features_raw_df = df  # update global
+
+        return {
+            "success": True if len(errors) < len(df) else False,
+            "new_column": "custom_feature",
+            "errors": errors
+        }
 
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
