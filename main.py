@@ -260,9 +260,12 @@ def outlier_intervals(column: str, method: str):
 
 @app.get("/get_columns")
 def get_columns():
-    global uploaded_df
-    if uploaded_df is not None:
-        return JSONResponse(content={"columns": uploaded_df.columns.tolist()})
+    global augmented_df, uploaded_df
+    df = augmented_df if augmented_df is not None else uploaded_df
+    if df is None:
+        return JSONResponse(content={"error": "No data uploaded"}, status_code=400)
+    if df is not None:
+        return JSONResponse(content={"columns": df.columns.tolist()})
     return JSONResponse(content={"error": "No file uploaded"}, status_code=400)
 
 @app.post("/apply_treatment")
