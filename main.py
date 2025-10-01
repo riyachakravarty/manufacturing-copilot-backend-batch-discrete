@@ -1112,7 +1112,7 @@ def custom_feature(req: CustomFeatureRequest):
         }
 
     except Exception as e:
-        return JSONResponse(content={"error": str(e)}, status_code=500
+        return JSONResponse(content={"error": str(e)}, status_code=500)
 
 
 class feature_variabilityRequest(BaseModel):
