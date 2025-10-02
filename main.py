@@ -1022,6 +1022,17 @@ def multivariate_analysis_with_ranges(req: MultivariateRequestWithRanges):
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 #######################################----Feature Engineering tab-------------###########################
+@app.get("/get_augmented_df_columns")
+def get_augmented_df_columns():
+    global augmented_df, uploaded_df
+    df = augmented_df if augmented_df is not None else uploaded_df
+    if df is None:
+        return JSONResponse(content={"error": "No data uploaded"}, status_code=400)
+    if df is not None:
+        return JSONResponse(content={"columns": df.columns.tolist()})
+    return JSONResponse(content={"error": "No file uploaded"}, status_code=400)
+
+
 class CustomFeatureRequest(BaseModel):
     column1: str | None = None
     column2: str | None = None
