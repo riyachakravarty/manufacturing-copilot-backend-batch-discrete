@@ -261,6 +261,7 @@ def outlier_intervals(column: str, method: str):
 @app.get("/get_columns")
 def get_columns():
     global augmented_df, uploaded_df
+    print(head(augmented_df))
     df = augmented_df if augmented_df is not None else uploaded_df
     if df is None:
         return JSONResponse(content={"error": "No data uploaded"}, status_code=400)
