@@ -1183,14 +1183,16 @@ def feature_missing(req: feature_missingRequest):
             return JSONResponse(content={"error": "No data uploaded"}, status_code=400)
 
         selected_variable=req.selectedFeature
+        
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=df['Date_time'], y=df[selected_variable], mode='lines+markers', name=selected_variable, line=dict(color='blue')))
+        for start, end in get_missing_value_intervals(df, selected_variable):
+            fig.add_vrect(x0=start, x1=end, fillcolor="orange", opacity=0.3, line_width=0)
+        for start, end in get_missing_datetime_intervals(df):
+            fig.add_vrect(x0=start, x1=end, fillcolor="red", opacity=0.2, line_width=0)
+        fig.update_layout(title=f"Missing Data Visualization: '{selected_variable}' Over Time", xaxis_title='Date_time', yaxis_title=selected_variable, hovermode="x unified", height=500, width=700)
+        return fig.to_json()
 
-        fig = make_subplots(rows=2, cols=2, subplot_titles=['Box Plot', 'Line Plot', 'Histogram'],
-                        row_heights=[0.5, 0.5], column_widths=[0.5, 0.5])
-        fig.add_trace(go.Box(y=df[selected_variable], name='Box Plot'), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df['Date_time'], y=df[selected_variable], mode='lines', name='Line Plot'), row=1, col=2)
-        fig.add_trace(go.Histogram(x=df[selected_variable], name='Histogram'), row=2, col=1)
-
-        fig.update_layout(title_text=f'Feature Variability Analysis - {selected_variable}', showlegend=False, height=800, width=1500)
         # ===== Debugging Section =====
         fig_json = fig.to_json()
         fig_dict = json.loads(fig_json)
