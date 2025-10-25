@@ -1213,3 +1213,46 @@ def feature_missing(req: feature_missingRequest):
 
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
+
+class feature_outlierRequest(BaseModel):
+    selectedFeature: str | None = None
+    method: str | None = None
+
+@app.post("/eda/feature_outlier")
+def feature_missing(req: feature_outlierRequest):
+    try:
+        global augmented_df, uploaded_df
+        df = augmented_df if augmented_df is not None else uploaded_df
+        if df is None:
+            return JSONResponse(content={"error": "No data uploaded"}, status_code=400)
+
+        selected_variable=req.selectedFeature
+        method=req.method
+        intervals = get_outlier_intervals(df, selected_variable, method=method)
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=df['Date_time'], y=df[selected_variable], mode='lines+markers', name=selected_variable, line=dict(color='blue')))
+        for start, end in intervals:
+            fig.add_vrect(x0=start, x1=end, fillcolor="purple", opacity=0.3, line_width=0)
+        fig.update_layout(title=f"Outlier Analysis ({method.upper()}): '{selected_variable}'", xaxis_title='Date_time', yaxis_title=column, hovermode="x unified", height=500, width=700)
+        return fig.to_json()
+
+        # ===== Debugging Section =====
+        fig_json = fig.to_json()
+        fig_dict = json.loads(fig_json)
+        print("=== Backend Debug: Feature Variability Analysis ===")
+        print("Figure type:", type(fig))
+        print(fig_json)
+        print("Keys in figure dict:", fig_dict.keys())
+        print("Number of traces:", len(fig_dict.get("data", [])))
+        for idx, trace in enumerate(fig_dict.get("data", [])):
+            print(f"Trace {idx}:")
+            print("   type:", trace.get("type"))
+            print("   name:", trace.get("name"))
+            print("   x length:", len(trace.get("x", [])))
+            print("   y length:", len(trace.get("y", [])))
+        print("=== End of Debug ===")
+    
+        return JSONResponse(content={"type": "plot", "data": json.loads(fig.to_json())})
+
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
