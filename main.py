@@ -1191,8 +1191,7 @@ def feature_missing(req: feature_missingRequest):
         for start, end in get_missing_datetime_intervals(df):
             fig.add_vrect(x0=start, x1=end, fillcolor="red", opacity=0.2, line_width=0)
         fig.update_layout(title=f"Missing Data Visualization: '{selected_variable}' Over Time", xaxis_title='Date_time', yaxis_title=selected_variable, hovermode="x unified", height=500, width=700)
-        return fig.to_json()
-
+        
         # ===== Debugging Section =====
         fig_json = fig.to_json()
         fig_dict = json.loads(fig_json)
@@ -1234,8 +1233,7 @@ def feature_missing(req: feature_outlierRequest):
         for start, end in intervals:
             fig.add_vrect(x0=start, x1=end, fillcolor="purple", opacity=0.3, line_width=0)
         fig.update_layout(title=f"Outlier Analysis ({method.upper()}): '{selected_variable}'", xaxis_title='Date_time', yaxis_title=column, hovermode="x unified", height=500, width=700)
-        return fig.to_json()
-
+        
         # ===== Debugging Section =====
         fig_json = fig.to_json()
         fig_dict = json.loads(fig_json)
