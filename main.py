@@ -416,11 +416,11 @@ async def upload_csv(file: UploadFile = File(...)):
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 #llm = OpenAI(temperature=0, openai_api_key=os.getenv("OPENAI_API_KEY"))
-tools = [
-    Tool(name="SummarizeData", func=summarize_data, description="Summarizes the uploaded manufacturing dataset"),
-    Tool(name="VariabilityAnalysis", func=plot_variability_tool, description="Generates variability analysis plots. Format: selected variable is 'ColumnName'"),
-    Tool(name="MissingValueAnalysis", func=visualize_missing_data, description="Generates missing value analysis plots. Format: selected variable is 'ColumnName'")
-]
+#tools = [
+ #   Tool(name="SummarizeData", func=summarize_data, description="Summarizes the uploaded manufacturing dataset"),
+  #  Tool(name="VariabilityAnalysis", func=plot_variability_tool, description="Generates variability analysis plots. Format: selected variable is 'ColumnName'"),
+   # Tool(name="MissingValueAnalysis", func=visualize_missing_data, description="Generates missing value analysis plots. Format: selected variable is 'ColumnName'")
+#]
 #agent = initialize_agent(tools, llm, agent="zero-shot-react-description", verbose=True)
 
 @app.post("/chat")
