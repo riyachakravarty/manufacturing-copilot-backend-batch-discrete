@@ -13,7 +13,7 @@ import plotly.graph_objs as go
 #from langchain.agents import initialize_agent, Tool
 #from langchain.llms import OpenAI
 from scipy.stats import zscore
-#from langchain_community.llms import OpenAI  # updated import
+#from langchain_community.llms import   # updated import
 from pydantic import BaseModel
 import plotly
 import numpy as np
@@ -415,13 +415,13 @@ async def upload_csv(file: UploadFile = File(...)):
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
-llm = OpenAI(temperature=0, openai_api_key=os.getenv("OPENAI_API_KEY"))
+#llm = OpenAI(temperature=0, openai_api_key=os.getenv("OPENAI_API_KEY"))
 tools = [
     Tool(name="SummarizeData", func=summarize_data, description="Summarizes the uploaded manufacturing dataset"),
     Tool(name="VariabilityAnalysis", func=plot_variability_tool, description="Generates variability analysis plots. Format: selected variable is 'ColumnName'"),
     Tool(name="MissingValueAnalysis", func=visualize_missing_data, description="Generates missing value analysis plots. Format: selected variable is 'ColumnName'")
 ]
-agent = initialize_agent(tools, llm, agent="zero-shot-react-description", verbose=True)
+#agent = initialize_agent(tools, llm, agent="zero-shot-react-description", verbose=True)
 
 @app.post("/chat")
 async def chat(request: Request):
