@@ -1228,6 +1228,7 @@ def feature_missing(req: feature_outlierRequest):
         selected_variable=req.selectedFeature
         method=req.method
         intervals = get_outlier_intervals(df, selected_variable, method=method)
+        print(intervals)
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=df['Date_time'], y=df[selected_variable], mode='lines+markers', name=selected_variable, line=dict(color='blue')))
         for start, end in intervals:
