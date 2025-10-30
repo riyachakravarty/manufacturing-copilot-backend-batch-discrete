@@ -1195,7 +1195,7 @@ def feature_missing(req: feature_missingRequest):
         # ===== Debugging Section =====
         fig_json = fig.to_json()
         fig_dict = json.loads(fig_json)
-        print("=== Backend Debug: Feature Variability Analysis ===")
+        print("=== Backend Debug: Feature Missing Value Analysis ===")
         print("Figure type:", type(fig))
         print(fig_json)
         print("Keys in figure dict:", fig_dict.keys())
@@ -1237,7 +1237,7 @@ def feature_missing(req: feature_outlierRequest):
         # ===== Debugging Section =====
         fig_json = fig.to_json()
         fig_dict = json.loads(fig_json)
-        print("=== Backend Debug: Feature Variability Analysis ===")
+        print("=== Backend Debug: Feature Outlier Analysis ===")
         print("Figure type:", type(fig))
         print(fig_json)
         print("Keys in figure dict:", fig_dict.keys())
