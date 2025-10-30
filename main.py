@@ -1218,7 +1218,7 @@ class feature_outlierRequest(BaseModel):
     method: str | None = None
 
 @app.post("/eda/feature_outlier")
-def feature_missing(req: feature_outlierRequest):
+def feature_outlier(req: feature_outlierRequest):
     try:
         global augmented_df, uploaded_df
         df = augmented_df if augmented_df is not None else uploaded_df
