@@ -1235,7 +1235,7 @@ def feature_outlier(req: feature_outlierRequest):
             fig.add_vrect(x0=start, x1=end, fillcolor="purple", opacity=0.3, line_width=0)
         fig.update_layout(title=f"Outlier Analysis ({method.upper()}): '{selected_variable}'", xaxis_title='Date_time', yaxis_title=column, hovermode="x unified", height=500, width=700)
         print("[CHAT] Result type from visualize_outlier_data:", type(fig.to_json()))
-            print("[CHAT] Raw result:", fig.to_json())
+        print("[CHAT] Raw result:", fig.to_json())
         # ===== Debugging Section =====
         fig_json = fig.to_json()
         fig_dict = json.loads(fig_json)
