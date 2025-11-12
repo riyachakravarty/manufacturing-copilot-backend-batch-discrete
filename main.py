@@ -1268,6 +1268,11 @@ def feature_outlier(req: feature_outlierRequest):
 # Global dataframes (already loaded elsewhere in your app)
 uploaded_df = None
 augmented_df = None
+last_trained_model = None
+last_X_train = None
+last_y_train = None
+last_target_name = None
+last_features = None
 
 class TrainModelRequest(BaseModel):
     target: str
@@ -1416,3 +1421,138 @@ def train_model(req: TrainModelRequest):
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
+@app.get("/feature_importance")
+def shap_feature_importance():
+    """
+    Generate SHAP-based feature importance plot from last trained model.
+    """
+    try:
+        global last_trained_model, last_X_train, last_y_train, last_target_name, last_features
+
+        # Validate preconditions
+        if last_trained_model is None or last_X_train is None:
+            return JSONResponse(
+                content={"error": "No trained model found. Please train a model first."},
+                status_code=400
+            )
+
+        model = last_trained_model
+        X = last_X_train
+
+        # --- Compute SHAP values ---
+        explainer = shap.TreeExplainer(model)
+        shap_values = explainer.shap_values(X)
+
+        # Handle SHAP value shape for LightGBM/XGBoost consistency
+        if isinstance(shap_values, list):
+            shap_values = shap_values[0]
+
+        mean_abs_shap = np.abs(shap_values).mean(axis=0)
+        shap_importance = sorted(
+            zip(X.columns, mean_abs_shap), key=lambda x: x[1], reverse=True
+        )
+
+        # --- Plot feature importance ---
+        features = [x[0] for x in shap_importance[:15]]
+        importances = [x[1] for x in shap_importance[:15]]
+
+        fig = go.Figure()
+        fig.add_trace(
+            go.Bar(
+                x=importances[::-1],
+                y=features[::-1],
+                orientation="h",
+                marker=dict(color="green"),
+                name="Mean |SHAP| Value"
+            )
+        )
+        fig.update_layout(
+            title="SHAP Feature Importance",
+            xaxis_title="Mean |SHAP| Value",
+            yaxis_title="Feature",
+            height=600,
+            margin=dict(t=60, b=40, l=80, r=40)
+        )
+
+        return JSONResponse(content={
+            "type": "plot",
+            "plot": json.loads(fig.to_json())
+        })
+
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+# 🔹 Route : SHAP Dependence / Optimal Ranges
+# ----------------------------
+@app.get("/optimal_ranges")
+def shap_dependence_plots():
+    """
+    Generate SHAP dependence plots for top features (Optimal Operating Ranges).
+    """
+    try:
+        global last_trained_model, last_X_train, last_y_train, last_target_name, last_features
+
+        if last_trained_model is None or last_X_train is None:
+            return JSONResponse(
+                content={"error": "No trained model found. Please train a model first."},
+                status_code=400
+            )
+
+        model = last_trained_model
+        X = last_X_train
+
+        # --- Compute SHAP values ---
+        explainer = shap.TreeExplainer(model)
+        shap_values = explainer.shap_values(X)
+        if isinstance(shap_values, list):
+            shap_values = shap_values[0]
+
+        mean_abs_shap = np.abs(shap_values).mean(axis=0)
+        shap_importance = sorted(
+            zip(X.columns, mean_abs_shap), key=lambda x: x[1], reverse=True
+        )
+
+        # --- Take top 4 important features for dependence plots ---
+        top_features = [x[0] for x in shap_importance[:4]]
+
+        fig = make_subplots(
+            rows=len(top_features),
+            cols=1,
+            shared_xaxes=False,
+            vertical_spacing=0.1,
+            subplot_titles=[f"SHAP Dependence: {f}" for f in top_features]
+        )
+
+        # --- Create SHAP dependence scatter for each top feature ---
+        for i, feature in enumerate(top_features):
+            fig.add_trace(
+                go.Scatter(
+                    x=X[feature],
+                    y=shap_values[:, i],
+                    mode="markers",
+                    marker=dict(
+                        color=X[feature],
+                        colorscale="Viridis",
+                        showscale=True,
+                        size=6,
+                        opacity=0.7
+                    ),
+                    name=feature
+                ),
+                row=i + 1, col=1
+            )
+
+        fig.update_layout(
+            title="SHAP Dependence / Optimal Operating Ranges",
+            height=300 * len(top_features),
+            showlegend=False,
+            margin=dict(t=80, b=60, l=80, r=40)
+        )
+
+        return JSONResponse(content={
+            "type": "plot",
+            "plot": json.loads(fig.to_json())
+        })
+
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
