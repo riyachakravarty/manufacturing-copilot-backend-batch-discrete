@@ -17,6 +17,13 @@ from scipy.stats import zscore
 from pydantic import BaseModel
 import plotly
 import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.ensemble import RandomForestRegressor
+from xgboost import XGBRegressor
+from lightgbm import LGBMRegressor
+from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+from datetime import datetime
 
 
 app = FastAPI()
@@ -1256,3 +1263,156 @@ def feature_outlier(req: feature_outlierRequest):
 
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
+
+##############################------Model Development------------##################################
+# Global dataframes (already loaded elsewhere in your app)
+uploaded_df = None
+augmented_df = None
+
+class TrainModelRequest(BaseModel):
+    target: str
+    performanceDirection: str = "maximize"  # default
+    features: list[str]
+    trainTestOption: str = "random"  # default
+    splitPercent: float = 70.0
+    startDate: str | None = None
+    endDate: str | None = None
+    modelType: str = "DecisionTree"  # default
+
+@app.post("/train_model")
+def train_model(req: TrainModelRequest):
+    """
+    Train ML model based on provided configuration or defaults.
+    Supports regression use case (manufacturing KPI prediction).
+    """
+    try:
+        global augmented_df, uploaded_df
+        df = augmented_df if augmented_df is not None else uploaded_df
+        if df is None:
+            return JSONResponse(content={"error": "No dataset uploaded."}, status_code=400)
+
+        # --- Validate columns ---
+        missing_cols = [c for c in [req.target] + req.features if c not in df.columns]
+        if missing_cols:
+            return JSONResponse(
+                content={"error": f"Missing columns in dataset: {missing_cols}"}, status_code=400
+            )
+
+        # --- Prepare data ---
+        df = df.copy()
+        df.dropna(subset=[req.target] + req.features, inplace=True)
+        X = df[req.features]
+        y = df[req.target]
+
+        # --- Handle train-test split ---
+        if req.trainTestOption in ["random", None, ""]:
+            test_size = (100 - req.splitPercent) / 100 if req.splitPercent else 0.3
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=test_size, random_state=42, shuffle=True
+            )
+
+        elif req.trainTestOption == "time_percent":
+            if "Date_time" not in df.columns:
+                return JSONResponse(content={"error": "Date_time column not found for time-based split."}, status_code=400)
+            df_sorted = df.sort_values(by="Date_time").reset_index(drop=True)
+            split_index = int(len(df_sorted) * (req.splitPercent / 100))
+            train_df, test_df = df_sorted.iloc[:split_index], df_sorted.iloc[split_index:]
+            X_train, y_train = train_df[req.features], train_df[req.target]
+            X_test, y_test = test_df[req.features], test_df[req.target]
+
+        elif req.trainTestOption == "time_custom":
+            if "Date_time" not in df.columns:
+                return JSONResponse(content={"error": "Date_time column not found for time-based split."}, status_code=400)
+            df_sorted = df.sort_values(by="Date_time").reset_index(drop=True)
+            start = pd.to_datetime(req.startDate)
+            end = pd.to_datetime(req.endDate)
+            train_mask = (df_sorted["Date_time"] >= start) & (df_sorted["Date_time"] <= end)
+            train_df = df_sorted.loc[train_mask]
+            test_df = df_sorted.loc[~train_mask]
+            X_train, y_train = train_df[req.features], train_df[req.target]
+            X_test, y_test = test_df[req.features], test_df[req.target]
+
+        else:
+            return JSONResponse(content={"error": f"Invalid train/test option: {req.trainTestOption}"}, status_code=400)
+
+        # --- Select and train model ---
+        model_type = req.modelType.lower()
+        if model_type in ["xgboost", "xgb"]:
+            model = XGBRegressor(random_state=42)
+        elif model_type in ["lightgbm", "lgb", "lgbm"]:
+            model = LGBMRegressor(random_state=42)
+        elif model_type in ["randomforest", "rf"]:
+            model = RandomForestRegressor(random_state=42)
+        else:
+            model = DecisionTreeRegressor(random_state=42)  # Default
+
+        # --- Train model ---
+        model.fit(X_train, y_train)
+        y_pred_train = model.predict(X_train)
+        y_pred_test = model.predict(X_test)
+
+        # ✅ Save model and training data globally
+        global last_trained_model, last_X_train, last_y_train, last_target, last_features, last_performance_direction
+        last_trained_model = model
+        last_X_train = X_train
+        last_y_train = y_train
+        last_target = req.target
+        last_features = req.features
+        last_performance_direction = req.performanceDirection
+
+        # --- Evaluate model ---
+        def calc_metrics(y_true, y_pred):
+            r2 = r2_score(y_true, y_pred)
+            rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+            mae = mean_absolute_error(y_true, y_pred)
+            mape = np.mean(np.abs((y_true - y_pred) / np.maximum(y_true, 1e-8))) * 100
+            return {
+                "R2": round(r2, 3),
+                "RMSE": round(rmse, 3),
+                "MAE": round(mae, 3),
+                "MAPE": round(mape, 2),
+            }
+
+        metrics_train = calc_metrics(y_train, y_pred_train)
+        metrics_test = calc_metrics(y_test, y_pred_test)
+        metrics_train["PerformanceDirection"] = req.performanceDirection
+        metrics_test["PerformanceDirection"] = req.performanceDirection
+
+        # --- Plot Predicted vs Actual (Train) ---
+        fig_train = go.Figure()
+        fig_train.add_trace(go.Scatter(x=y_train, y=y_pred_train, mode="markers", name="Train Predictions"))
+        fig_train.add_trace(go.Scatter(x=y_train, y=y_train, mode="lines", name="Ideal Fit", line=dict(color="red")))
+        fig_train.update_layout(
+            title="Predicted vs Actual (Train Data)",
+            xaxis_title="Actual Target",
+            yaxis_title="Predicted Target",
+            height=500,
+            width=700,
+        )
+
+        # --- Plot Predicted vs Actual (Test) ---
+        fig_test = go.Figure()
+        fig_test.add_trace(go.Scatter(x=y_test, y=y_pred_test, mode="markers", name="Test Predictions"))
+        fig_test.add_trace(go.Scatter(x=y_test, y=y_test, mode="lines", name="Ideal Fit", line=dict(color="red")))
+        fig_test.update_layout(
+            title="Predicted vs Actual (Test Data)",
+            xaxis_title="Actual Target",
+            yaxis_title="Predicted Target",
+            height=500,
+            width=700,
+        )
+
+        return JSONResponse(
+            content={
+                "success": True,
+                "model_name": req.modelType,
+                "metrics_train": metrics_train,
+                "metrics_test": metrics_test,
+                "plot_train": json.loads(fig_train.to_json()),
+                "plot_test": json.loads(fig_test.to_json()),
+            }
+        )
+
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
