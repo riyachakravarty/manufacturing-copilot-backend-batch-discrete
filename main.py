@@ -1450,25 +1450,32 @@ def shap_feature_importance():
         
             if "lgbm" in model_name:
                 explainer = shap.Explainer(model, X)  # LightGBM safe
+                shap_values = explainer(X)
+                shap_matrix = shap_values.values if hasattr(shap_values, "values") else shap_values
             elif "xgb" in model_name:
-                explainer = shap.Explainer(model, X)  # XGBoost safe
+                # XGBoost specific fix: use booster directly
+                explainer = shap.TreeExplainer(model.get_booster())
+                shap_values = explainer.shap_values(X)
+                shap_matrix = shap_values
             else:
+                # Default Tree-based models (DecisionTree, RandomForest)
                 explainer = shap.TreeExplainer(model)
-        
-            shap_values = explainer(X)
-            shap_matrix = shap_values.values if hasattr(shap_values, "values") else shap_values
-        
+                shap_values = explainer.shap_values(X)
+                shap_matrix = shap_values
+
             print(f"✅ SHAP computed successfully with shape {np.shape(shap_matrix)}")
-        
+            
         except Exception as e:
             print("⚠️ SHAP computation failed — falling back to model feature_importances_")
             traceback.print_exc()
         
             if hasattr(model, "feature_importances_"):
+                shap_matrix = None
                 mean_abs_shap = model.feature_importances_
                 shap_importance = sorted(
                     zip(X.columns, mean_abs_shap), key=lambda x: x[1], reverse=True
                 )
+                print("✅ Used model.feature_importances_ for fallback importance")
             else:
                 raise RuntimeError(f"SHAP failed and model has no feature_importances_: {str(e)}")
 
