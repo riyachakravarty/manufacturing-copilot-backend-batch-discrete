@@ -1445,22 +1445,33 @@ def shap_feature_importance():
 
         # --- Compute SHAP values ---
         try:
-            explainer = shap.TreeExplainer(model)
-            shap_values = explainer.shap_values(X)
-            print("✅ SHAP values computed successfully")
+            model_name = type(model).__name__.lower()
+            print(f"🧠 Using SHAP for model type: {model_name}")
+        
+            if "lgbm" in model_name:
+                explainer = shap.Explainer(model, X)  # LightGBM safe
+            elif "xgb" in model_name:
+                explainer = shap.Explainer(model, X)  # XGBoost safe
+            else:
+                explainer = shap.TreeExplainer(model)
+        
+            shap_values = explainer(X)
+            shap_matrix = shap_values.values if hasattr(shap_values, "values") else shap_values
+        
+            print(f"✅ SHAP computed successfully with shape {np.shape(shap_matrix)}")
+        
         except Exception as e:
-            print("❌ [ERROR] Failed during SHAP value computation")
+            print("⚠️ SHAP computation failed — falling back to model feature_importances_")
             traceback.print_exc()
-            raise e
-       
-        # Handle SHAP value shape for LightGBM/XGBoost consistency
-        if isinstance(shap_values, list):
-            shap_values = shap_values[0]
+        
+            if hasattr(model, "feature_importances_"):
+                mean_abs_shap = model.feature_importances_
+                shap_importance = sorted(
+                    zip(X.columns, mean_abs_shap), key=lambda x: x[1], reverse=True
+                )
+            else:
+                raise RuntimeError(f"SHAP failed and model has no feature_importances_: {str(e)}")
 
-        mean_abs_shap = np.abs(shap_values).mean(axis=0)
-        shap_importance = sorted(
-            zip(X.columns, mean_abs_shap), key=lambda x: x[1], reverse=True
-        )
 
         # --- Plot feature importance ---
         features = [x[0] for x in shap_importance[:15]]
