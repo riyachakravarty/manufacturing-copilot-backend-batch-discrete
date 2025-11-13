@@ -1428,9 +1428,11 @@ def shap_feature_importance():
     """
     try:
         global last_trained_model, last_X_train, last_y_train, last_target_name, last_features
+        print("🔍 [INFO] Entered /eda/feature_importance route")
 
         # Validate preconditions
         if last_trained_model is None or last_X_train is None:
+            print("❌ [ERROR] No trained model or X_train found")
             return JSONResponse(
                 content={"error": "No trained model found. Please train a model first."},
                 status_code=400
@@ -1438,11 +1440,19 @@ def shap_feature_importance():
 
         model = last_trained_model
         X = last_X_train
+        print(f"✅ Model type: {type(model).__name__}")
+        print(f"✅ Training dataset shape: {X.shape}")
 
         # --- Compute SHAP values ---
-        explainer = shap.TreeExplainer(model)
-        shap_values = explainer.shap_values(X)
-
+        try:
+            explainer = shap.TreeExplainer(model)
+            shap_values = explainer.shap_values(X)
+            print("✅ SHAP values computed successfully")
+        except Exception as e:
+            print("❌ [ERROR] Failed during SHAP value computation")
+            traceback.print_exc()
+            raise e
+       
         # Handle SHAP value shape for LightGBM/XGBoost consistency
         if isinstance(shap_values, list):
             shap_values = shap_values[0]
@@ -1473,14 +1483,16 @@ def shap_feature_importance():
             height=600,
             margin=dict(t=60, b=40, l=80, r=40)
         )
-
+        print("✅ SHAP feature importance plot created successfully")
         return JSONResponse(content={
             "type": "plot",
             "plot": json.loads(fig.to_json())
         })
 
     except Exception as e:
-        return JSONResponse(content={"error": str(e)}, status_code=500)
+        print("❌ [EXCEPTION] SHAP Feature Importance route failed")
+        traceback.print_exc()
+        return JSONResponse(content={"error": f"Internal error: {str(e)}"}, status_code=500)
 
 # 🔹 Route : SHAP Dependence / Optimal Ranges
 # ----------------------------
