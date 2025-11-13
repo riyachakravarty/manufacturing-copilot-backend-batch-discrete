@@ -1491,7 +1491,6 @@ def shap_feature_importance():
 
     except Exception as e:
         print("❌ [EXCEPTION] SHAP Feature Importance route failed")
-        traceback.print_exc()
         return JSONResponse(content={"error": f"Internal error: {str(e)}"}, status_code=500)
 
 # 🔹 Route : SHAP Dependence / Optimal Ranges
