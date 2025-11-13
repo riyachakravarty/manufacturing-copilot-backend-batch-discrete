@@ -1464,6 +1464,9 @@ def shap_feature_importance():
                 shap_values = explainer.shap_values(X)
                 shap_matrix = shap_values
 
+            mean_abs_shap = np.abs(shap_values).mean(axis=0)
+            shap_importance = sorted(zip(X.columns, mean_abs_shap),key=lambda x: x[1],reverse=True
+
             print(f"✅ SHAP computed successfully with shape {np.shape(shap_matrix)}")
             
         except Exception as e:
