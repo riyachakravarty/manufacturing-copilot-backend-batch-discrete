@@ -1506,10 +1506,14 @@ def shap_feature_importance():
             margin=dict(t=60, b=40, l=80, r=40)
         )
         print("✅ SHAP feature importance plot created successfully")
+        
         return JSONResponse(content={
             "type": "plot",
-            "plot": json.loads(fig.to_json())
+            "plot": json.loads(fig.to_json()),
+            "feature_importance": {feat: float(val) for feat, val in shap_importance},
+            "top_features": [feat for feat, _ in shap_importance[:10]]
         })
+
 
     except Exception as e:
         print("❌ [EXCEPTION] SHAP Feature Importance route failed")
