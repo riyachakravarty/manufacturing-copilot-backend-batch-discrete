@@ -1,5 +1,5 @@
-from app.adapters.factory import load_interpreter
-from app.utils.prompt_builder import (
+from adapters.factory import load_interpreter
+from prompt_builder import (
     build_shap_summary_prompt,
     build_shap_dependence_prompt
 )
