@@ -1591,16 +1591,35 @@ def shap_dependence_plots():
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 ###################--------------Adding LLMs for interpretation-------------#############
+from app.schemas import SHAPSummaryContext, SHAPDependenceContext
+from app.services.interpreter_service import (
+    interpret_shap_summary,
+    interpret_shap_dependence
+)
+
 @app.post("/interpret_shap_summary")
-def interpret_shap_summary(ctx: SHAPSummaryContext):
-    adapter = load_interpreter()
-    prompt = build_shap_summary_prompt(ctx.dict())
-    return adapter.interpret({"prompt": prompt})
+def interpret_shap_summary_api(ctx: SHAPSummaryContext):
+    try:
+        result = interpret_shap_summary(ctx.dict())
+        return {
+            "insight": result["insight"],
+            "confidence": result["confidence"],
+            "suggested_next_steps": result.get("suggested_next_steps", []),
+            "raw_output": result
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"SHAP summary interpretation failed: {str(e)}")
 
 
 @app.post("/interpret_shap_dependence")
-def interpret_shap_dependence(ctx: SHAPDependenceContext):
-    adapter = load_interpreter()
-    prompt = build_shap_dependence_prompt(ctx.dict())
-    return adapter.interpret({"prompt": prompt})
-
+def interpret_shap_dependence_api(ctx: SHAPDependenceContext):
+    try:
+        result = interpret_shap_dependence(ctx.dict())
+        return {
+            "insight": result["insight"],
+            "confidence": result["confidence"],
+            "suggested_next_steps": result.get("suggested_next_steps", []),
+            "raw_output": result
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"SHAP dependence interpretation failed: {str(e)}")
