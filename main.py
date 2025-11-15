@@ -1595,8 +1595,8 @@ def shap_dependence_plots():
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 ###################--------------Adding LLMs for interpretation-------------#############
-from app.schemas import SHAPSummaryContext, SHAPDependenceContext
-from app.services.interpreter_service import (
+from schemas import SHAPSummaryContext, SHAPDependenceContext
+from interpreter_service import (
     interpret_shap_summary,
     interpret_shap_dependence
 )
