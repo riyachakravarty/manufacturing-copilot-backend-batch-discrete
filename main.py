@@ -1589,3 +1589,18 @@ def shap_dependence_plots():
 
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
+
+###################--------------Adding LLMs for interpretation-------------#############
+@app.post("/interpret_shap_summary")
+def interpret_shap_summary(ctx: SHAPSummaryContext):
+    adapter = load_interpreter()
+    prompt = build_shap_summary_prompt(ctx.dict())
+    return adapter.interpret({"prompt": prompt})
+
+
+@app.post("/interpret_shap_dependence")
+def interpret_shap_dependence(ctx: SHAPDependenceContext):
+    adapter = load_interpreter()
+    prompt = build_shap_dependence_prompt(ctx.dict())
+    return adapter.interpret({"prompt": prompt})
+
