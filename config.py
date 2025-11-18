@@ -1,3 +1,5 @@
+from pydantic import BaseSettings
+
 class Settings(BaseSettings):
     MODEL_TYPE: str = "llama"       # llama / mistral / phi / rule
     MODEL_ENDPOINT: str = "http://127.0.0.1:8002"
