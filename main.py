@@ -1596,7 +1596,7 @@ def shap_dependence_plots():
 
 ###################--------------Adding LLMs for interpretation-------------#############
 from schemas import SHAPSummaryContext, SHAPDependenceContext
-from interpreter_service import (
+from interpreter_services import (
     interpret_shap_summary,
     interpret_shap_dependence
 )
