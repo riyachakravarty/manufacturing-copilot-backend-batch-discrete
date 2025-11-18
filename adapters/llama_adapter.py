@@ -1,7 +1,7 @@
 import requests
 from .base import BaseInterpreter
 from utils.response_parser import parse_llm_json
-from app.config import settings
+from config import settings
 
 class LlamaInterpreter(BaseInterpreter):
 
