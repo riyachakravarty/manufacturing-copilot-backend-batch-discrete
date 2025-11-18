@@ -1,4 +1,4 @@
-from pydantic-settings import BaseSettings
+from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     MODEL_TYPE: str = "llama"       # llama / mistral / phi / rule
