@@ -1,3 +1,6 @@
+from pydantic import BaseModel
+from typing import Dict, List
+
 class SHAPSummaryContext(BaseModel):
     feature_importance: Dict[str, float]
     top_features: List[str]
