@@ -1,4 +1,4 @@
-from app.config import settings
+from config import settings
 from .llama_adapter import LlamaInterpreter
 from .mistral_adapter import MistralInterpreter
 from .phi_adapter import Phi3Interpreter
