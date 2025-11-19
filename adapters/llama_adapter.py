@@ -15,7 +15,7 @@ class LlamaInterpreter(BaseInterpreter):
         }
 
         resp = requests.post(
-            f"{settings.MODEL_ENDPOINT}/generate",
+            f"{settings.MODEL_ENDPOINT}/completion",
             json=payload,
             timeout=settings.TIMEOUT,
         )
