@@ -55,10 +55,19 @@ Provide:
 4. Operational meaning for process/plant reliability
 5. Recommended next analysis
 
-Return STRICT JSON:
+YOU MUST RETURN VALID JSON ONLY.
+NO text before or after the JSON.
+NO explanation outside JSON.
+NO line breaks outside JSON.
+The JSON MUST match this structure EXACTLY:
+
 {{
- "insight": "",
- "confidence": 0.0,
- "suggested_next_steps": []
+ "insight": "<1–3 sentence summary>",
+ "confidence": <float between 0 and 1>,
+ "suggested_next_steps": [
+      "<step 1>",
+      "<step 2>",
+      "<step 3>"
+ ]
 }}
 """
