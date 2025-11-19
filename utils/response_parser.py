@@ -1,4 +1,5 @@
 import json
+import re
 
 def parse_llm_json(text: str):
     """
@@ -6,11 +7,16 @@ def parse_llm_json(text: str):
     If the LLM returns text instead of JSON, wrap it into a dict.
     """
     if not text:
-        return {"error": "Empty LLM response"}
+        return {"raw_response": ""}
 
-    try:
-        return json.loads(text)
-    except Exception:
-        # If the LLM response isn't valid JSON, return raw text
-        return {"raw_response": text}
+    # Extract JSON block between braces
+    match = re.search(r"\{.*\}", text, flags=re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group())
+        except:
+            pass  # fallback below
+
+    return {"raw_response": text}
+
 
