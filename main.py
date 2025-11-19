@@ -1623,8 +1623,8 @@ def interpret_shap_dependence_api(ctx: SHAPDependenceContext):
     try:
         result = interpret_shap_dependence(ctx.dict())
         return {
-            "insight": result["insight"],
-            "confidence": result["confidence"],
+            "insight": result.get("insight", result.get("raw_response", "Model did not return 'insight'.")),
+            "confidence": result.get("confidence", 0.0),
             "suggested_next_steps": result.get("suggested_next_steps", []),
             "raw_output": result
         }
