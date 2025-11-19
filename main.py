@@ -1601,16 +1601,19 @@ from interpreter_services import (
     interpret_shap_dependence
 )
 
+
 @app.post("/interpret_shap_summary")
 def interpret_shap_summary_api(ctx: SHAPSummaryContext):
     try:
         result = interpret_shap_summary(ctx.dict())
+
         return {
-            "insight": result["insight"],
-            "confidence": result["confidence"],
+            "insight": result.get("insight", result.get("raw_response", "Model did not return 'insight'.")),
+            "confidence": result.get("confidence", 0.0),
             "suggested_next_steps": result.get("suggested_next_steps", []),
             "raw_output": result
         }
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"SHAP summary interpretation failed: {str(e)}")
 
