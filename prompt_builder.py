@@ -4,7 +4,7 @@ You are a senior manufacturing ML engineer.
 
 Interpret the SHAP SUMMARY PLOT for a predictive model.
 
-Feature importance (mean |SHAP| values):
+Feature Importance (mean |SHAP| values):
 {ctx['feature_importance']}
 
 Top important features:
@@ -17,13 +17,23 @@ Provide:
 4. How stable/robust the model seems
 5. Recommended next steps to validate findings
 
-Return STRICT JSON:
+YOU MUST RETURN VALID JSON ONLY.
+NO text before or after the JSON.
+NO explanation outside JSON.
+NO line breaks outside JSON.
+The JSON MUST match this structure EXACTLY:
+
 {{
- "insight": "",
- "confidence": 0.0,
- "suggested_next_steps": []
+ "insight": "<1–3 sentence summary>",
+ "confidence": <float between 0 and 1>,
+ "suggested_next_steps": [
+      "<step 1>",
+      "<step 2>",
+      "<step 3>"
+ ]
 }}
 """
+
 
 
 def build_shap_dependence_prompt(ctx: dict) -> str:
