@@ -1,7 +1,8 @@
-from fastapi import FastAPI, UploadFile, File, Request
+from fastapi import FastAPI, UploadFile, File, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
+from typing import List
 import pandas as pd
 import io
 from io import StringIO
@@ -57,29 +58,133 @@ def summarize_data(_):
         return uploaded_df.describe().to_string()
     return "No data uploaded."
 
-def plot_variability_analysis_combined(selected_variable):
-    global uploaded_df
-    if uploaded_df is None:
-        return "No data uploaded."
 
-    fig = make_subplots(rows=2, cols=2, subplot_titles=['Box Plot', 'Line Plot', 'Histogram'],
-                        row_heights=[0.5, 0.5], column_widths=[0.5, 0.5])
-    fig.add_trace(go.Box(y=uploaded_df[selected_variable], name='Box Plot'), row=1, col=1)
-    fig.add_trace(go.Scatter(x=uploaded_df['Date_time'], y=uploaded_df[selected_variable], mode='lines', name='Line Plot'), row=1, col=2)
-    fig.add_trace(go.Histogram(x=uploaded_df[selected_variable], name='Histogram'), row=2, col=1)
+class BatchProfileRequest(BaseModel):
+    columns: List[str]
+    batch_numbers: List[str]
 
-    fig.update_layout(title_text=f'Combined Feature Analysis - {selected_variable}', showlegend=False, height=800, width=1500)
-    return fig.to_json()
+@app.post("/run_batch_profiles")
+def run_batch_profiles(req: BatchProfileRequest):
+    global uploaded_df, augmented_df
 
-def plot_variability_tool(input_text):
-    # Updated regex to make quotes optional and more flexible
-    match = re.search(r"selected variable is ['\"]?(.+?)['\"]?$", input_text, re.IGNORECASE)
-    if not match:
-        print(f"[VARIABILITY TOOL] Could not parse selected variable from prompt: {input_text}")
-        return "Could not find selected variable in prompt."
-    selected_variable = match.group(1).strip()
-    print(f"[VARIABILITY TOOL] Selected variable parsed: {selected_variable}")
-    return plot_variability_analysis_combined(selected_variable)
+    df = augmented_df if augmented_df is not None else uploaded_df
+
+    if df is None:
+        return JSONResponse(
+            content={"error": "No data uploaded"},
+            status_code=400
+        )
+
+    # Validate columns
+    missing = [c for c in req.columns if c not in df.columns]
+    if missing:
+        return JSONResponse(
+            content={"error": f"Columns not found: {missing}"},
+            status_code=400
+        )
+
+    if "Batch_No" not in df.columns:
+        return JSONResponse(
+            content={"error": "'Batch_No' column missing"},
+            status_code=400
+        )
+
+    # Make a copy and add Batch_Counter per batch
+    df = df.copy()
+    df["Batch_Counter"] = df.groupby("Batch_No").cumcount() + 1
+
+    # Filter batches
+    df_filtered = df[df["Batch_No"].isin(req.batch_numbers)]
+
+    if df_filtered.empty:
+        return JSONResponse(
+            content={"error": "No data for selected batches"},
+            status_code=400
+        )
+
+    pages = []
+    # ====================================================================
+    # CASE A: Multiple columns -> One page per batch
+    # ====================================================================
+    if len(req.columns) > 1:
+        for batch in req.batch_numbers:
+            batch_df = df_filtered[df_filtered["Batch_No"] == batch]
+            if batch_df.empty:
+                continue
+
+            fig = go.Figure()
+
+            for col in req.columns:
+                fig.add_trace(
+                    go.Scatter(
+                        x=batch_df["Batch_Counter"],
+                        y=batch_df[col],
+                        mode="lines",
+                        name=col
+                    )
+                )
+
+            fig.update_layout(
+                title=f"Batch Profile – Batch {batch}",
+                xaxis_title="Batch Counter",
+                yaxis_title="Values",
+                template="plotly_white",
+                height=500,
+            )
+
+            pages.append({
+                "batch": batch,
+                "type": "plot",
+                "data": json.loads(fig.to_json())
+            })
+
+    # ====================================================================
+    # CASE B: Single column -> Overlay all batches on one page
+    # ====================================================================
+    else:
+        col = req.columns[0]
+        fig = go.Figure()
+
+        for batch in req.batch_numbers:
+            batch_df = df_filtered[df_filtered["Batch_No"] == batch]
+            if batch_df.empty:
+                continue
+
+            fig.add_trace(
+                go.Scatter(
+                    x=batch_df["Batch_Counter"],
+                    y=batch_df[col],
+                    mode="lines",
+                    name=f"Batch {batch}"
+                )
+            )
+
+        fig.update_layout(
+            title=f"Batch Overlay – {col}",
+            xaxis_title="Batch Counter",
+            yaxis_title=col,
+            template="plotly_white",
+            height=600,
+        )
+
+        pages.append({
+            "column": col,
+            "type": "plot",
+            "data": json.loads(fig.to_json())
+        })
+
+    # ====================================================================
+    # RETURN RESULT
+    # ====================================================================
+
+    return JSONResponse(
+        content={
+            "pages": pages,
+            "message": "Batch profiling successful",
+            "num_pages": len(pages),
+        }
+    )
+
 
 def get_missing_datetime_intervals(df, datetime_col='Date_time'):
     if datetime_col not in df.columns:
