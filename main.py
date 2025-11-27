@@ -94,6 +94,8 @@ def run_batch_profiles(req: BatchProfileRequest):
     df["Batch_Counter"] = df.groupby("Batch_No").cumcount() + 1
 
     # Filter batches
+    df["Batch_No"] = df["Batch_No"].astype(str)
+    req.batch_numbers = [str(b) for b in req.batch_numbers]
     df_filtered = df[df["Batch_No"].isin(req.batch_numbers)]
 
     if df_filtered.empty:
