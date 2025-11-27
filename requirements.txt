@@ -9,7 +9,7 @@ matplotlib==3.8.4
 plotly==5.22.0
 kaleido
 scipy
-shap==0.46.0
+#shap==0.46.0
 scikit-learn==1.4.2
 numpy==1.26.4
 xgboost==2.1.1
