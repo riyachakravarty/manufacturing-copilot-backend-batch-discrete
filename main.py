@@ -276,6 +276,24 @@ def get_columns():
         return JSONResponse(content={"columns": df.columns.tolist()})
     return JSONResponse(content={"error": "No file uploaded"}, status_code=400)
 
+@app.get("/get_batchnos")
+def get_batchnos():
+    global augmented_df, uploaded_df
+    df = augmented_df if augmented_df is not None else uploaded_df
+    if df is None:
+        return JSONResponse(content={"error": "No data uploaded"}, status_code=400)
+    if df is not None:
+        if "Batch_No" not in df.columns:
+            return JSONResponse(content={"error": "'Batch_No' column not found in the uploaded file"},
+            status_code=400
+        )
+        # extract unique batch numbers (sorted, converted to Python types)
+        unique_batches = df["Batch_No"].dropna().unique().tolist()
+        return JSONResponse(content={"batch_numbers": unique_batches})
+    
+    return JSONResponse(content={"error": "No file uploaded"}, status_code=400)
+
+
 @app.post("/apply_treatment")
 def apply_treatment(payload: dict):
     global uploaded_df, augmented_df
