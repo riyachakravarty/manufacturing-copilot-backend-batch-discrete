@@ -114,9 +114,9 @@ def run_batch_profiles(req: BatchProfileRequest):
             if batch_df.empty:
                 continue
 
-            fig = go.Figure()
-
             for col in req.columns:
+                fig = go.Figure()
+
                 fig.add_trace(
                     go.Scatter(
                         x=batch_df["Batch_Counter"],
@@ -131,7 +131,9 @@ def run_batch_profiles(req: BatchProfileRequest):
                 xaxis_title="Batch Counter",
                 yaxis_title="Values",
                 template="plotly_white",
-                height=500,
+                height=550,
+                width=900,       # ← ADD THIS
+                margin=dict(l=60, r=40, t=60, b=60)
             )
 
             pages.append({
@@ -167,6 +169,8 @@ def run_batch_profiles(req: BatchProfileRequest):
             yaxis_title=col,
             template="plotly_white",
             height=600,
+            width=900,
+            margin=dict(l=60, r=40, t=60, b=60)
         )
 
         pages.append({
