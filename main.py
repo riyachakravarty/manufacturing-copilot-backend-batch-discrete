@@ -131,12 +131,16 @@ def run_batch_profiles(req: BatchProfileRequest):
             fig.update_layout(
                 title=f"Batch Profile – Batch {batch} – {col}",
                 xaxis_title="Batch Counter",
-                yaxis_title="col",
+                yaxis_title=col,
                 template="plotly_white",
-                height=300,
-                autosize=True,
-                margin=dict(l=40, r=20, t=40, b=40)
+                height=400 * len(req.columns)* len(req.batch_numbers), width=600, showlegend=False,
             )
+
+            fig.update_layout(
+            title_text=f"Specialized Q-cut Box Plots (Target: {target}, Quantiles: {quantiles})",
+            height=400 * len(columns), width=600, showlegend=False,
+            xaxis_title=f"Quantile bins of {target}"
+        )
 
             # Force x-axis to match all batches
             fig.update_xaxes(range=[1, max_counter])
@@ -173,9 +177,7 @@ def run_batch_profiles(req: BatchProfileRequest):
             xaxis_title="Batch Counter",
             yaxis_title=col,
             template="plotly_white",
-            hheight=300,
-            autosize=True,
-            margin=dict(l=40, r=20, t=40, b=40)
+            height=400 * len(req.columns)* len(req.batch_numbers), width=600, showlegend=False,
         )
 
         # Force x-axis to match all batches
