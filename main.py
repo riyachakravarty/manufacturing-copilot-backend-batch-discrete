@@ -63,6 +63,21 @@ class BatchProfileRequest(BaseModel):
     columns: List[str]
     batch_numbers: List[str]
 
+from fastapi import HTTPException
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+from typing import List
+import pandas as pd
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import json
+
+
+class BatchProfileRequest(BaseModel):
+    columns: List[str]
+    batch_numbers: List[str]
+
+
 @app.post("/run_batch_profiles")
 def run_batch_profiles(req: BatchProfileRequest):
     global uploaded_df, augmented_df
@@ -70,127 +85,89 @@ def run_batch_profiles(req: BatchProfileRequest):
     df = augmented_df if augmented_df is not None else uploaded_df
 
     if df is None:
-        return JSONResponse(
-            content={"error": "No data uploaded"},
-            status_code=400
-        )
+        return JSONResponse({"error": "No data uploaded"}, status_code=400)
 
     # Validate columns
     missing = [c for c in req.columns if c not in df.columns]
     if missing:
-        return JSONResponse(
-            content={"error": f"Columns not found: {missing}"},
-            status_code=400
-        )
+        return JSONResponse({"error": f"Columns not found: {missing}"}, status_code=400)
 
     if "Batch_No" not in df.columns:
-        return JSONResponse(
-            content={"error": "'Batch_No' column missing"},
-            status_code=400
-        )
+        return JSONResponse({"error": "'Batch_No' column missing"}, status_code=400)
 
-    # Make a copy and add Batch_Counter per batch
+    # Prepare batch counter
     df = df.copy()
     df["Batch_Counter"] = df.groupby("Batch_No").cumcount() + 1
 
-    # Filter batches
+    # Convert batch numbers to string
     df["Batch_No"] = df["Batch_No"].astype(str)
     req.batch_numbers = [str(b) for b in req.batch_numbers]
+
+    # Filter data
     df_filtered = df[df["Batch_No"].isin(req.batch_numbers)]
-    max_counter = df_filtered["Batch_Counter"].max()
-
-
     if df_filtered.empty:
-        return JSONResponse(
-            content={"error": "No data for selected batches"},
-            status_code=400
-        )
+        return JSONResponse({"error": "No data for selected batches"}, status_code=400)
 
-    pages = []
-    # ====================================================================
-    # CASE A: Multiple columns -> One page per batch
-    # ====================================================================
-    if len(req.columns) > 1:
-        for batch in req.batch_numbers:
-            batch_df = df_filtered[df_filtered["Batch_No"] == batch]
-            if batch_df.empty:
-                continue
+    # Global x-axis range
+    max_counter = int(df_filtered["Batch_Counter"].max())
 
-            for col in req.columns:
-                fig = go.Figure()
-                fig.add_trace(
-                    go.Scatter(
-                        x=batch_df["Batch_Counter"],
-                        y=batch_df[col],
-                        mode="lines",
-                        name=col
-                    )
-                )
+    # Total number of subplots = batches × columns
+    total_rows = len(req.batch_numbers) * len(req.columns)
 
-            fig.update_layout(
-                title=f"Batch Profile – Batch {batch} – {col}",
-                xaxis_title="Batch Counter",
-                yaxis_title=col,
-                template="plotly_white",
-                height=400 * len(req.columns), width=800, showlegend=False,
-            )
+    # Create subplot layout
+    fig = make_subplots(
+        rows=total_rows,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.06,
+        subplot_titles=[
+            f"Batch {batch} – {col}"
+            for batch in req.batch_numbers
+            for col in req.columns
+        ]
+    )
 
-            # Force x-axis to match all batches
-            fig.update_xaxes(range=[1, max_counter])
+    # Build subplots row by row
+    current_row = 1
+    for batch in req.batch_numbers:
+        batch_df = df_filtered[df_filtered["Batch_No"] == batch]
 
-            pages.append({
-                "batch": batch,
-                "type": "plot",
-                "data": json.loads(fig.to_json())
-            })
-
-    # ====================================================================
-    # CASE B: Single column -> Overlay all batches on one page
-    # ====================================================================
-    else:
-        col = req.columns[0]
-        fig = go.Figure()
-
-        for batch in req.batch_numbers:
-            batch_df = df_filtered[df_filtered["Batch_No"] == batch]
-            if batch_df.empty:
-                continue
-
+        for col in req.columns:
             fig.add_trace(
                 go.Scatter(
                     x=batch_df["Batch_Counter"],
                     y=batch_df[col],
                     mode="lines",
-                    name=f"Batch {batch}"
-                )
+                    name=f"{batch} – {col}"
+                ),
+                row=current_row,
+                col=1
             )
 
-        fig.update_layout(
-            title=f"Batch Overlay – {batch} – {col}",
-            xaxis_title="Batch Counter",
-            yaxis_title=col,
-            template="plotly_white",
-            height=400 * len(req.columns)* len(req.batch_numbers), width=600, showlegend=False,
-        )
+            # Fix x-axis range for this subplot
+            fig.update_xaxes(
+                range=[1, max_counter],
+                row=current_row,
+                col=1
+            )
 
-        # Force x-axis to match all batches
-        fig.update_xaxes(range=[1, max_counter])
+            current_row += 1
 
-        pages.append({
-            "column": col,
-            "type": "plot",
-            "data": json.loads(fig.to_json())
-        })
-
-    # ====================================================================
-    # RETURN RESULT
-    # ====================================================================
+    # Layout settings
+    fig.update_layout(
+        height=max(400, total_rows * 350),    # adjustable scrolling height
+        width=900,
+        showlegend=False,
+        template="plotly_white",
+        title="Batch Profiles"
+    )
 
     return JSONResponse(
         content={
-            "pages": pages,
+            "type": "plot",
+            "data": json.loads(fig.to_json()),
             "message": "Batch profiling successful",
-            "num_pages": len(pages),
+            "num_subplots": total_rows,
         }
     )
 
