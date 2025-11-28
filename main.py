@@ -136,12 +136,6 @@ def run_batch_profiles(req: BatchProfileRequest):
                 height=400 * len(req.columns)* len(req.batch_numbers), width=600, showlegend=False,
             )
 
-            fig.update_layout(
-            title_text=f"Specialized Q-cut Box Plots (Target: {target}, Quantiles: {quantiles})",
-            height=400 * len(columns), width=600, showlegend=False,
-            xaxis_title=f"Quantile bins of {target}"
-        )
-
             # Force x-axis to match all batches
             fig.update_xaxes(range=[1, max_counter])
 
