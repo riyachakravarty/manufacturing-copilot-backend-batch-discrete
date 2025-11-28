@@ -116,8 +116,8 @@ def run_batch_profiles(req: BatchProfileRequest):
             if batch_df.empty:
                 continue
 
+            fig = go.Figure()
             for col in req.columns:
-                fig = go.Figure()
 
                 fig.add_trace(
                     go.Scatter(
@@ -133,7 +133,7 @@ def run_batch_profiles(req: BatchProfileRequest):
                 xaxis_title="Batch Counter",
                 yaxis_title=col,
                 template="plotly_white",
-                height=400 * len(req.columns)* len(req.batch_numbers), width=600, showlegend=False,
+                height=400 * len(req.columns), width=800, showlegend=False,
             )
 
             # Force x-axis to match all batches
