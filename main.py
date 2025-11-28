@@ -116,9 +116,8 @@ def run_batch_profiles(req: BatchProfileRequest):
             if batch_df.empty:
                 continue
 
-            fig = go.Figure()
             for col in req.columns:
-
+                fig = go.Figure()
                 fig.add_trace(
                     go.Scatter(
                         x=batch_df["Batch_Counter"],
