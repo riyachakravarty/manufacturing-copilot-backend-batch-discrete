@@ -97,6 +97,8 @@ def run_batch_profiles(req: BatchProfileRequest):
     df["Batch_No"] = df["Batch_No"].astype(str)
     req.batch_numbers = [str(b) for b in req.batch_numbers]
     df_filtered = df[df["Batch_No"].isin(req.batch_numbers)]
+    max_counter = df_filtered["Batch_Counter"].max()
+
 
     if df_filtered.empty:
         return JSONResponse(
@@ -127,14 +129,17 @@ def run_batch_profiles(req: BatchProfileRequest):
                 )
 
             fig.update_layout(
-                title=f"Batch Profile – Batch {batch}",
+                title=f"Batch Profile – Batch {batch} – {col}",
                 xaxis_title="Batch Counter",
-                yaxis_title="Values",
+                yaxis_title="col",
                 template="plotly_white",
-                height=550,
-                width=900,       # ← ADD THIS
-                margin=dict(l=60, r=40, t=60, b=60)
+                height=300,
+                autosize=True,
+                margin=dict(l=40, r=20, t=40, b=40)
             )
+
+            # Force x-axis to match all batches
+            fig.update_xaxes(range=[1, max_counter])
 
             pages.append({
                 "batch": batch,
@@ -164,14 +169,17 @@ def run_batch_profiles(req: BatchProfileRequest):
             )
 
         fig.update_layout(
-            title=f"Batch Overlay – {col}",
+            title=f"Batch Overlay – {batch} – {col}",
             xaxis_title="Batch Counter",
             yaxis_title=col,
             template="plotly_white",
-            height=600,
-            width=900,
-            margin=dict(l=60, r=40, t=60, b=60)
+            hheight=300,
+            autosize=True,
+            margin=dict(l=40, r=20, t=40, b=40)
         )
+
+        # Force x-axis to match all batches
+        fig.update_xaxes(range=[1, max_counter])
 
         pages.append({
             "column": col,
