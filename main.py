@@ -178,8 +178,8 @@ class Condition(BaseModel):
     column: str
     operator: str         # "<", ">", "==", "<=", ">=", "!="
     value: any            # string or numeric; for n_times use integer N
-    logic: Optional[str]  # "AND" or "OR" - note: logic to be applied with previous condition
-    conditionType: Optional[str] = "first_time"  # "first_time" or "n_times"
+    logic: str  # "AND" or "OR" - note: logic to be applied with previous condition
+    conditionType: str = "first_time"  # "first_time" or "n_times"
 
 class PhaseDef(BaseModel):
     phaseName: str
@@ -189,8 +189,8 @@ class PhaseDef(BaseModel):
 class DefinePhasesRequest(BaseModel):
     phases: List[PhaseDef]
     # optional: allow client to request which batches to produce plots for immediately
-    batch_numbers: Optional[List[str]] = None
-    plot_columns: Optional[List[str]] = None   # which columns to plot for batch profiles (if omitted use all selected earlier or all numeric)
+    batch_numbers: List[str] = None
+    plot_columns: List[str] = None   # which columns to plot for batch profiles (if omitted use all selected earlier or all numeric)
 
 # -------------------------
 # Helper utilities
