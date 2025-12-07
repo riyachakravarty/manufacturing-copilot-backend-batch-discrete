@@ -72,6 +72,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import json
 
+###########################-------Generate batch profiles-----------###################
 
 class BatchProfileRequest(BaseModel):
     columns: List[str]
@@ -167,6 +168,365 @@ def run_batch_profiles(req: BatchProfileRequest):
             "type": "plot",
             "data": json.loads(fig.to_json()),
             "message": "Batch profiling successful",
+            "num_subplots": total_rows,
+        }
+    )
+
+
+###########################-------Generate phase wise batch profiles-----------###################
+class Condition(BaseModel):
+    column: str
+    operator: str         # "<", ">", "==", "<=", ">=", "!="
+    value: Any            # string or numeric; for n_times use integer N
+    logic: Optional[str]  # "AND" or "OR" - note: logic to be applied with previous condition
+    conditionType: Optional[str] = "first_time"  # "first_time" or "n_times"
+
+class PhaseDef(BaseModel):
+    phaseName: str
+    startConditions: List[Condition]
+    endConditions: List[Condition]
+
+class DefinePhasesRequest(BaseModel):
+    phases: List[PhaseDef]
+    # optional: allow client to request which batches to produce plots for immediately
+    batch_numbers: Optional[List[str]] = None
+    plot_columns: Optional[List[str]] = None   # which columns to plot for batch profiles (if omitted use all selected earlier or all numeric)
+
+# -------------------------
+# Helper utilities
+# -------------------------
+def _to_number_if_possible(x):
+    try:
+        return float(x)
+    except Exception:
+        return x
+
+def _apply_operator(series: pd.Series, operator: str, value: Any) -> pd.Series:
+    """Return boolean mask applying operator between series and value.
+       value might be numeric or string; cast series to numeric where appropriate.
+    """
+    op = operator.strip()
+    # Attempt numeric comparison if both sides numeric-like
+    # We'll try to coerce value to float
+    try:
+        numeric_value = float(value)
+        # coerce series to numeric (errors -> NaN), comparisons with NaN are False
+        s_num = pd.to_numeric(series, errors="coerce")
+        if op == ">":
+            return s_num > numeric_value
+        elif op == "<":
+            return s_num < numeric_value
+        elif op == ">=":
+            return s_num >= numeric_value
+        elif op == "<=":
+            return s_num <= numeric_value
+        elif op in ("==", "="):
+            return s_num == numeric_value
+        elif op == "!=":
+            return s_num != numeric_value
+        else:
+            # unknown operator: return all False
+            return pd.Series(False, index=series.index)
+    except Exception:
+        # fallback to string comparison
+        s_str = series.astype(str)
+        val_str = str(value)
+        if op in ("==", "="):
+            return s_str == val_str
+        elif op == "!=":
+            return s_str != val_str
+        else:
+            # cannot do >,< on strings reliably -> return False mask
+            return pd.Series(False, index=series.index)
+
+def _mask_for_condition(batch_df: pd.DataFrame, cond: Condition) -> pd.Series:
+    """
+    Evaluate a single condition and return boolean mask indexed like batch_df.index.
+    Supports conditionType "first_time" (simple per-row boolean) and "n_times" (consecutive count).
+    """
+    series = batch_df[cond.column]
+
+    base_mask = _apply_operator(series, cond.operator, cond.value)
+
+    if (cond.conditionType or "first_time") == "first_time":
+        return base_mask.fillna(False)
+    elif cond.conditionType == "n_times":
+        # value must be integer N
+        try:
+            N = int(float(cond.value))
+            if N <= 0:
+                return pd.Series(False, index=batch_df.index)
+        except Exception:
+            return pd.Series(False, index=batch_df.index)
+
+        # We want positions where condition holds for N consecutive rows.
+        # Compute rolling sum on boolean-as-int and find windows with sum == N.
+        mask_int = base_mask.astype(int).reindex(batch_df.index, fill_value=0)
+        # rolling on mask_int (center=False) -> value at window end
+        # Use min_periods=N to ensure full window
+        rolling_sum = mask_int.rolling(window=N, min_periods=N).sum()
+        # Where rolling_sum == N indicates the last row of a consecutive block of length N satisfying condition.
+        # For start detection we will convert this to True at the first index of that run (end_idx - N + 1).
+        hits = rolling_sum == N
+        hit_indices = hits[hits].index.tolist()
+        if not hit_indices:
+            return pd.Series(False, index=batch_df.index)
+        # create a mask that marks the *first* index of each N-run (end_idx - N +1)
+        mask = pd.Series(False, index=batch_df.index)
+        for end_idx in hit_indices:
+            try:
+                # compute position N-window start index
+                # end_idx may be label index, get integer position
+                pos = batch_df.index.get_loc(end_idx)
+                start_pos = pos - N + 1
+                if start_pos >= 0:
+                    start_idx = batch_df.index[start_pos]
+                    mask.loc[start_idx] = True
+            except Exception:
+                # index lookup issues: skip
+                continue
+        return mask
+    else:
+        # unknown condition type
+        return pd.Series(False, index=batch_df.index)
+
+def _combine_conditions(batch_df: pd.DataFrame, conditions: List[Condition]) -> pd.Series:
+    """
+    Combine multiple condition masks into one boolean mask.
+    IMPORTANT: combine using the logic of the *previous* condition for cond_i.
+    - For the 1st condition (i==0) we simply start with its mask.
+    - For cond_i where i>0, get prev_logic = conditions[i-1].logic (default "AND"),
+      and combine combined_mask (so far) with current mask using prev_logic.
+    """
+    if not conditions:
+        return pd.Series(False, index=batch_df.index)
+
+    combined = None
+    for i, cond in enumerate(conditions):
+        mask = _mask_for_condition(batch_df, cond)
+        if i == 0:
+            combined = mask.copy()
+        else:
+            prev_logic = (conditions[i - 1].logic or "AND").upper()
+            if prev_logic == "AND":
+                combined = combined & mask
+            elif prev_logic == "OR":
+                combined = combined | mask
+            else:
+                combined = combined & mask
+    return combined.fillna(False)
+
+# -------------------------
+# /define_phases endpoint
+# -------------------------
+@app.post("/define_phases")
+def define_phases(req: DefinePhasesRequest):
+    """
+    Accept phase definitions, compute start/end per batch, update augmented_df,
+    and return batch profiles with vertical lines for phase starts/ends.
+    """
+    global uploaded_df, augmented_df
+
+    if uploaded_df is None and augmented_df is None:
+        return JSONResponse({"error": "No data uploaded"}, status_code=400)
+
+    # start from uploaded_df if augmented_df absent
+    base_df = augmented_df.copy() if augmented_df is not None else uploaded_df.copy()
+
+    df = base_df.copy()
+
+    # validate Batch_No
+    if "Batch_No" not in df.columns:
+        return JSONResponse({"error": "'Batch_No' column missing"}, status_code=400)
+
+    # ensure Batch_No string and compute batch counter
+    df["Batch_No"] = df["Batch_No"].astype(str)
+    df["Batch_Counter"] = df.groupby("Batch_No").cumcount() + 1
+
+    # ensure columns used in conditions exist
+    # collect all columns referenced
+    referenced_cols = set()
+    for phase in req.phases:
+        for c in phase.startConditions + phase.endConditions:
+            referenced_cols.add(c.column)
+    missing_cols = [c for c in referenced_cols if c not in df.columns]
+    if missing_cols:
+        return JSONResponse({"error": f"Referenced columns not found: {missing_cols}"}, status_code=400)
+
+    # prepare augmented columns for each phase's start and end (boolean)
+    for phase in req.phases:
+        safe_name = phase.phaseName.strip().replace(" ", "_")
+        start_col = f"{safe_name}_start"
+        end_col = f"{safe_name}_end"
+        df[start_col] = False
+        df[end_col] = False
+
+    # process each batch separately and mark starts/ends
+    for batch, batch_df in df.groupby("Batch_No"):
+        # batch_df is a view — copy to ensure indexing stable
+        batch_df = batch_df.copy()
+        # We'll track previous phase's end batch_counter to enforce phase ordering
+        prev_phase_end_counter = None  # integer batch_counter
+
+        for phase in req.phases:
+            safe_name = phase.phaseName.strip().replace(" ", "_")
+            start_col = f"{safe_name}_start"
+            end_col = f"{safe_name}_end"
+
+            # compute start mask & candidate start points (batch_counter values)
+            start_mask = _combine_conditions(batch_df, phase.startConditions)
+            # For combined start_mask, we want candidate batch_counters where mask True.
+            # If the mask marks first rows of N-run (n_times), it will have True at that row.
+            start_candidates = list(batch_df.loc[start_mask, "Batch_Counter"].astype(int).tolist())
+
+            # compute end mask & candidate end points
+            end_mask = _combine_conditions(batch_df, phase.endConditions)
+            end_candidates = list(batch_df.loc[end_mask, "Batch_Counter"].astype(int).tolist())
+
+            # choose start_point and end_point ensuring ordering constraints
+            chosen_start = None
+            chosen_end = None
+
+            # iterate through start_candidates in ascending order and find a valid pair with an end > start
+            for s in sorted(start_candidates):
+                # enforce start must be after prev_phase_end_counter (if present)
+                if prev_phase_end_counter is not None and s <= prev_phase_end_counter:
+                    continue
+
+                # find the smallest end candidate > s
+                larger_ends = [e for e in sorted(end_candidates) if e > s]
+                if not larger_ends:
+                    # no valid end for this start; try next start
+                    continue
+
+                e = larger_ends[0]
+
+                # sanity check: enforce e > s (should be by construction)
+                if e <= s:
+                    continue
+
+                # Also ensure that if there is a next phase, its start will be > e.
+                # We cannot foresee next phase now, so we will accept (but next phase processing will enforce)
+                chosen_start = s
+                chosen_end = e
+                break
+
+            # If we couldn't find pair, skip marking for this batch-phase
+            if chosen_start is None or chosen_end is None:
+                # leave default False flags
+                prev_phase_end_counter = prev_phase_end_counter  # unchanged
+                continue
+
+            # mark df rows where Batch_Counter == chosen_start / chosen_end for this batch
+            # find indices in original df for this batch and these counters
+            batch_mask_total = (df["Batch_No"] == batch)
+            start_idx_mask = batch_mask_total & (df["Batch_Counter"] == chosen_start)
+            end_idx_mask = batch_mask_total & (df["Batch_Counter"] == chosen_end)
+
+            df.loc[start_idx_mask, start_col] = True
+            df.loc[end_idx_mask, end_col] = True
+
+            # update prev_phase_end_counter for next phase ordering
+            prev_phase_end_counter = chosen_end
+
+    # Save augmented_df globally
+    augmented_df = df.copy()
+
+    # Optionally return batch profiles with vertical lines for each phase start/end
+    # If client provided batch_numbers and plot_columns, use them; otherwise plot all batches and all req-referenced numeric columns
+    plot_batches = req.batch_numbers if req.batch_numbers else sorted(df["Batch_No"].unique())
+    if req.plot_columns:
+        plot_columns = req.plot_columns
+    else:
+        # choose numeric columns among referenced or all numeric
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        # prefer referenced columns if numeric; else use first few numeric columns
+        plot_columns = [c for c in numeric_cols if c in set([cond.column for ph in req.phases for cond in (ph.startConditions + ph.endConditions)])]
+        if not plot_columns:
+            # fallback: use first 2 numeric cols
+            plot_columns = numeric_cols[:2] if numeric_cols else []
+
+    # If no plot_columns found, return augmented_df saved and a message
+    if not plot_columns:
+        return JSONResponse(
+            content={
+                "message": "Phase definitions saved. No numeric columns available for plotting.",
+                "saved_phases": [p.phaseName for p in req.phases],
+            }
+        )
+
+    # Prepare df_filtered for plotting
+    df_plot = augmented_df.copy()
+    df_plot["Batch_No"] = df_plot["Batch_No"].astype(str)
+    df_plot["Batch_Counter"] = df_plot.groupby("Batch_No").cumcount() + 1
+    df_plot_filtered = df_plot[df_plot["Batch_No"].isin(plot_batches)]
+
+    if df_plot_filtered.empty:
+        return JSONResponse({"error": "No data for plotting after phase definition"}, status_code=400)
+
+    max_counter = int(df_plot_filtered["Batch_Counter"].max())
+    total_rows = len(plot_batches) * len(plot_columns)
+
+    # Create subplot grid: each row = one (batch, column) pair
+    subplot_titles = [f"Batch {b} – {c}" for b in plot_batches for c in plot_columns]
+    fig = make_subplots(rows=total_rows, cols=1, shared_xaxes=True, vertical_spacing=0.04, subplot_titles=subplot_titles)
+
+    current_row = 1
+    for batch in plot_batches:
+        batch_df = df_plot_filtered[df_plot_filtered["Batch_No"] == batch]
+        if batch_df.empty:
+            # still increment rows for consistency
+            current_row += len(plot_columns)
+            continue
+
+        for col in plot_columns:
+            # main trace
+            fig.add_trace(
+                go.Scatter(
+                    x=batch_df["Batch_Counter"],
+                    y=batch_df[col],
+                    mode="lines",
+                    name=f"{batch} – {col}",
+                    hoverinfo="x+y"
+                ),
+                row=current_row, col=1
+            )
+
+            # find phase vertical lines for this batch
+            for phase in req.phases:
+                safe_name = phase.phaseName.strip().replace(" ", "_")
+                start_col = f"{safe_name}_start"
+                end_col = f"{safe_name}_end"
+
+                # get start and end counters for this batch
+                starts = batch_df.loc[batch_df[start_col] == True, "Batch_Counter"].tolist()
+                ends = batch_df.loc[batch_df[end_col] == True, "Batch_Counter"].tolist()
+
+                # add start verticals (green dashed)
+                for s in starts:
+                    fig.add_vline(x=s, line=dict(color="green", dash="dash"), row=current_row, col=1)
+
+                # add end verticals (red dashed)
+                for e in ends:
+                    fig.add_vline(x=e, line=dict(color="red", dash="dash"), row=current_row, col=1)
+
+            # fix x range to global max_counter
+            fig.update_xaxes(range=[1, max_counter], row=current_row, col=1)
+            current_row += 1
+
+    fig.update_layout(
+        height=max(400, total_rows * 220),
+        width=1000,
+        showlegend=False,
+        template="plotly_white",
+        title="Batch Profiles with Phase Markers"
+    )
+
+    return JSONResponse(
+        content={
+            "type": "plot",
+            "data": json.loads(fig.to_json()),
+            "message": "Phases applied, augmented_df updated and batch profiles returned",
             "num_subplots": total_rows,
         }
     )
