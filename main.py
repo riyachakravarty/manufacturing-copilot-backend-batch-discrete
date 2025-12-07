@@ -177,7 +177,7 @@ def run_batch_profiles(req: BatchProfileRequest):
 class Condition(BaseModel):
     column: str
     operator: str         # "<", ">", "==", "<=", ">=", "!="
-    value: Any            # string or numeric; for n_times use integer N
+    value: any            # string or numeric; for n_times use integer N
     logic: Optional[str]  # "AND" or "OR" - note: logic to be applied with previous condition
     conditionType: Optional[str] = "first_time"  # "first_time" or "n_times"
 
@@ -201,7 +201,7 @@ def _to_number_if_possible(x):
     except Exception:
         return x
 
-def _apply_operator(series: pd.Series, operator: str, value: Any) -> pd.Series:
+def _apply_operator(series: pd.Series, operator: str, value: any) -> pd.Series:
     """Return boolean mask applying operator between series and value.
        value might be numeric or string; cast series to numeric where appropriate.
     """
