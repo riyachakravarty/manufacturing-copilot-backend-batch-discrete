@@ -26,6 +26,7 @@ from lightgbm import LGBMRegressor
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 from datetime import datetime
 import shap
+from typing import List, Any
 
 
 app = FastAPI()
@@ -177,7 +178,7 @@ def run_batch_profiles(req: BatchProfileRequest):
 class Condition(BaseModel):
     column: str
     operator: str         # "<", ">", "==", "<=", ">=", "!="
-    value: any            # string or numeric; for n_times use integer N
+    value: Any            # string or numeric; for n_times use integer N
     logic: str  # "AND" or "OR" - note: logic to be applied with previous condition
     conditionType: str = "first_time"  # "first_time" or "n_times"
 
@@ -201,7 +202,7 @@ def _to_number_if_possible(x):
     except Exception:
         return x
 
-def _apply_operator(series: pd.Series, operator: str, value: any) -> pd.Series:
+def _apply_operator(series: pd.Series, operator: str, value: Any) -> pd.Series:
     """Return boolean mask applying operator between series and value.
        value might be numeric or string; cast series to numeric where appropriate.
     """
