@@ -611,8 +611,41 @@ def visualize_missing_data_post_treatment(input_text):
         return f"Column '{selected_variable}' not in dataframe."
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df['Date_time'], y=df[selected_variable], mode='lines+markers', name=selected_variable, line=dict(color='blue')))
-    for start, end in get_missing_value_intervals(df, selected_variable):
-        fig.add_vrect(x0=start, x1=end, fillcolor="orange", opacity=0.3, line_width=0)
+    
+    annotation_y_offset = 1.02  # first row for annotations (in paper coordinates)
+    annotation_row_gap = 0.04   # vertical gap between annotation rows
+    for idx, (start, end) in enumerate(get_missing_value_intervals(df, selected_variable)):
+        # ensure timestamps
+        start_ts = pd.to_datetime(start)
+        end_ts = pd.to_datetime(end)
+        xmid = start_ts + (end_ts - start_ts) / 2
+
+        # find unique Batch_No values in this interval
+        mask = (df['Date_time'] >= start_ts) & (df['Date_time'] <= end_ts)
+        batches = df.loc[mask, 'Batch_No'].astype(str).unique().tolist()
+        batches_text = ", ".join(batches) if batches else "None"
+
+        # draw rectangle
+        fig.add_vrect(
+            x0=start_ts, x1=end_ts,
+            fillcolor="orange", opacity=0.25, line_width=0
+        )
+
+        # add annotation with batch numbers (placed above plot area)
+        fig.add_annotation(
+            x=xmid,
+            y=annotation_y_offset - idx * annotation_row_gap,
+            xref="x",
+            yref="paper",
+            text=f"Missing vals batches: {batches_text}",
+            showarrow=False,
+            font=dict(size=10),
+            align="center",
+            bgcolor="rgba(255,165,0,0.15)",
+            bordercolor="rgba(255,165,0,0.5)",
+            borderwidth=0.5,
+            opacity=0.9
+        )
     for start, end in get_missing_datetime_intervals(df):
         fig.add_vrect(x0=start, x1=end, fillcolor="red", opacity=0.2, line_width=0)
     fig.update_layout(title=f"Missing Data Visualization: '{selected_variable}' Over Time", xaxis_title='Date_time', yaxis_title=selected_variable, hovermode="x unified", height=500, width=700)
