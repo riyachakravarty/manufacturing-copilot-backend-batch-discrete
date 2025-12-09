@@ -515,6 +515,15 @@ def define_phases(req: DefinePhasesRequest):
             fig.update_xaxes(range=[1, max_counter], row=current_row, col=1)
             current_row += 1
 
+            for start, end in get_missing_value_intervals(batch_df, col):
+                start_ts = pd.to_datetime(start)
+                end_ts = pd.to_datetime(end)
+                mask_ge = batch_df["Date_time"] >= start_ts
+                mask_le = batch_df["Date_time"] <= end_ts
+                start_counter = int(batch_df.loc[mask_ge, "Batch_Counter"].iloc[0])
+                end_counter = int(batch_df.loc[mask_le, "Batch_Counter"].iloc[-1])
+                fig.add_vrect(x0=start_counter, x1=end_counter, fillcolor="orange", opacity=0.3, line_width=0)
+
     fig.update_layout(
         height=max(400, total_rows * 220),
         width=1000,
