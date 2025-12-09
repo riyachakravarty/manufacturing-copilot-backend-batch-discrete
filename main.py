@@ -533,16 +533,63 @@ def define_phases(req: DefinePhasesRequest):
     )
 
 
+# -------------------------
+# Helper: safe inferred frequency -> Timedelta
+# -------------------------
+def _safe_inferred_timedelta(df, datetime_col):
+    """
+    Return a safe, non-zero pd.Timedelta representing the typical sampling interval.
+    Logic:
+     - Ensure datetime_col is datetime dtype.
+     - Compute diffs; if diffs empty => fallback to 1 hour
+     - Use diffs.mode()[0] if available
+     - If mode is zero or negative, fall back to median positive diff
+     - Ensure final value > 0 seconds
+    """
+    # convert and sort
+    s = pd.to_datetime(df[datetime_col], errors="coerce").dropna().sort_values().reset_index(drop=True)
+    if s.empty or len(s) == 1:
+        return pd.Timedelta(hours=1)   # safe default
+
+    diffs = s.diff().dropna()
+    if diffs.empty:
+        return pd.Timedelta(hours=1)
+
+    # pick the most common non-zero diff
+    try:
+        mode = diffs.mode()
+        if not mode.empty:
+            candidate = pd.to_timedelta(mode.iloc[0])
+        else:
+            candidate = pd.to_timedelta(diffs.median())
+    except Exception:
+        # fallback to median
+        candidate = pd.to_timedelta(diffs.median())
+
+    # If candidate is zero or negative, pick smallest positive diff or default
+    try:
+        if candidate <= pd.Timedelta(0):
+            positive = diffs[diffs > pd.Timedelta(0)]
+            if not positive.empty:
+                candidate = pd.to_timedelta(positive.min())
+            else:
+                candidate = pd.Timedelta(minutes=1)
+    except Exception:
+        candidate = pd.Timedelta(minutes=1)
+
+    # final guard
+    if candidate <= pd.Timedelta(0):
+        candidate = pd.Timedelta(minutes=1)
+
+    return candidate
+
+
 def get_missing_datetime_intervals(df, datetime_col='Date_time'):
     if datetime_col not in df.columns:
         return []
     df = df.sort_values(by=datetime_col).reset_index(drop=True)
-    inferred_freq = pd.infer_freq(df[datetime_col])
-    if inferred_freq is None:
-        diffs = df[datetime_col].diff().dropna()
-        most_common_diff = diffs.mode()[0] if not diffs.empty else pd.Timedelta(hours=1)
-        inferred_freq = most_common_diff
-    full_range = pd.date_range(start=df[datetime_col].min(), end=df[datetime_col].max(), freq=inferred_freq)
+    freq_td = _safe_inferred_timedelta(df, datetime_col)
+    full_range = pd.date_range(start=df[datetime_col].min(), end=df[datetime_col].max(), freq=freq_td)
     missing_times = full_range.difference(df[datetime_col])
 
     intervals = []
@@ -550,11 +597,11 @@ def get_missing_datetime_intervals(df, datetime_col='Date_time'):
         start = missing_times[0]
         prev = start
         for t in missing_times[1:]:
-            if (t - prev) != pd.Timedelta(inferred_freq):
-                intervals.append((start, prev + pd.Timedelta(inferred_freq)))
+            if (t - prev) != pd.Timedelta(freq_td):
+                intervals.append((start, prev + pd.Timedelta(freq_td)))
                 start = t
             prev = t
-        intervals.append((start, prev + pd.Timedelta(inferred_freq)))
+        intervals.append((start, prev + pd.Timedelta(freq_td)))
     return intervals
 
 def get_missing_value_intervals(df, column, datetime_col='Date_time'):
@@ -589,8 +636,41 @@ def visualize_missing_data(input_text):
         return f"Column '{selected_variable}' not in dataframe."
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=uploaded_df['Date_time'], y=uploaded_df[selected_variable], mode='lines+markers', name=selected_variable, line=dict(color='blue')))
-    for start, end in get_missing_value_intervals(uploaded_df, selected_variable):
-        fig.add_vrect(x0=start, x1=end, fillcolor="orange", opacity=0.3, line_width=0)
+    
+    annotation_y_offset = 1.02  # first row for annotations (in paper coordinates)
+    annotation_row_gap = 0.04   # vertical gap between annotation rows
+    for idx, (start, end) in enumerate(get_missing_value_intervals(uploaded_df, selected_variable)):
+        # ensure timestamps
+        start_ts = pd.to_datetime(start)
+        end_ts = pd.to_datetime(end)
+        xmid = start_ts + (end_ts - start_ts) / 2
+
+        # find unique Batch_No values in this interval
+        mask = (uploaded_df['Date_time'] >= start_ts) & (uploaded_df['Date_time'] <= end_ts)
+        batches = uploaded_df.loc[mask, 'Batch_No'].astype(str).unique().tolist()
+        batches_text = ", ".join(batches) if batches else "None"
+
+        # draw rectangle
+        fig.add_vrect(
+            x0=start_ts, x1=end_ts,
+            fillcolor="orange", opacity=0.25, line_width=0
+        )
+
+        # add annotation with batch numbers (placed above plot area)
+        fig.add_annotation(
+            x=xmid,
+            y=annotation_y_offset - idx * annotation_row_gap,
+            xref="x",
+            yref="paper",
+            text=f"Missing vals batches: {batches_text}",
+            showarrow=False,
+            font=dict(size=10),
+            align="center",
+            bgcolor="rgba(255,165,0,0.15)",
+            bordercolor="rgba(255,165,0,0.5)",
+            borderwidth=0.5,
+            opacity=0.9
+        )
     for start, end in get_missing_datetime_intervals(uploaded_df):
         fig.add_vrect(x0=start, x1=end, fillcolor="red", opacity=0.2, line_width=0)
     fig.update_layout(title=f"Missing Data Visualization: '{selected_variable}' Over Time", xaxis_title='Date_time', yaxis_title=selected_variable, hovermode="x unified", height=500, width=700)
