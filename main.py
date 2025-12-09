@@ -155,6 +155,23 @@ def run_batch_profiles(req: BatchProfileRequest):
 
             current_row += 1
 
+            for start, end in get_missing_value_intervals(batch_df, col):
+                batch_df = batch_df.copy()
+                batch_df["Date_time"] = pd.to_datetime(batch_df["Date_time"])
+
+                start_ts = pd.to_datetime(start)   # from missing interval function
+                end_ts   = pd.to_datetime(end)
+
+                # Now safely map Date_time → Batch_Counter
+                start_counter = int(
+                    batch_df.loc[batch_df["Date_time"] == start_ts, "Batch_Counter"].iloc[0]
+                )
+
+                end_counter = int(
+                    batch_df.loc[batch_df["Date_time"] == end_ts, "Batch_Counter"].iloc[0]
+                )
+                fig.add_vrect(x0=start_counter, x1=end_counter, fillcolor="orange", opacity=0.3, line_width=0)
+
     # Layout settings
     fig.update_layout(
         height=max(400, total_rows * 350),    # adjustable scrolling height
