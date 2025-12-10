@@ -454,6 +454,7 @@ def define_phases(req: DefinePhasesRequest):
     # ensure Batch_No string and compute batch counter
     df["Batch_No"] = df["Batch_No"].astype(str)
     df["Batch_Counter"] = df.groupby("Batch_No").cumcount() + 1
+    df["Date_time"] = pd.to_datetime(df["Date_time"])
 
     # ensure columns used in conditions exist
     # collect all columns referenced
@@ -624,16 +625,79 @@ def define_phases(req: DefinePhasesRequest):
 
             # fix x range to global max_counter
             fig.update_xaxes(range=[1, max_counter], row=current_row, col=1)
+            #current_row += 1
+
+            try:
+                missing_intervals = get_missing_value_intervals(batch_df, col)
+            except Exception as e:
+                missing_intervals = []
+                print(f"[run_batch_profiles] ERROR computing missing intervals for batch {batch} col {col}: {e}")
+                traceback.print_exc()
+
+            print(f"[run_batch_profiles] batch={batch} col={col} missing_intervals_count={len(missing_intervals)}")
+            for mi_idx, (start, end) in enumerate(missing_intervals):
+                try:
+                    # convert to timestamps
+                    start_ts = pd.to_datetime(start)
+                    end_ts = pd.to_datetime(end)
+
+                    # robustly find batch counters matching these timestamps
+                    if "Date_time" not in batch_df.columns or batch_df["Date_time"].isna().all():
+                        # fallback: if no datetime in batch_df, skip mapping
+                        print(f"[run_batch_profiles] batch={batch} col={col} missing interval {mi_idx} skipped: Date_time missing")
+                        continue
+
+                    # searchsorted gives insertion index for start_ts
+                    # we want the index of the last timestamp <= start_ts (so choose pos-1 if not exact)
+                    times = batch_df["Date_time"]
+                    pos_start = times.searchsorted(start_ts)
+                    if pos_start < len(times) and times.iloc[pos_start] == start_ts:
+                        start_idx = pos_start
+                        start_counter = int(batch_df["Batch_Counter"].iloc[start_idx])
+                        match_type_start = "exact"
+                    else:
+                        # choose previous index (last <= start_ts) if exists, else first
+                        if pos_start == 0:
+                            start_idx = 0
+                        else:
+                            start_idx = pos_start - 1
+                        start_counter = int(batch_df["Batch_Counter"].iloc[start_idx])
+                        match_type_start = "nearest_le"
+
+                    pos_end = times.searchsorted(end_ts)
+                    # for end, we want last index <= end_ts (so pos_end-1 if pos_end not exact)
+                    if pos_end < len(times) and times.iloc[pos_end] == end_ts:
+                        end_idx = pos_end
+                        end_counter = int(batch_df["Batch_Counter"].iloc[end_idx])
+                        match_type_end = "exact"
+                    else:
+                        if pos_end == 0:
+                            end_idx = 0
+                        else:
+                            end_idx = min(pos_end - 1, len(times) - 1)
+                        end_counter = int(batch_df["Batch_Counter"].iloc[end_idx])
+                        match_type_end = "nearest_le"
+
+                    print(f"[run_batch_profiles] batch={batch} col={col} interval#{mi_idx} start_ts={start_ts} end_ts={end_ts} -> start_idx={start_idx} end_idx={end_idx} start_counter={start_counter} end_counter={end_counter} (match:{match_type_start}/{match_type_end})")
+
+                    # Only add rectangle if end_counter >= start_counter (safety)
+                    if end_counter >= start_counter:
+                        fig.add_vrect(
+                            x0=start_counter, x1=end_counter,
+                            fillcolor="orange", opacity=0.3, line_width=0,
+                            row=current_row, col=1
+                        )
+                        print(f"[run_batch_profiles] Added orange vrect for batch={batch} col={col} x0={start_counter} x1={end_counter}")
+                    else:
+                        print(f"[run_batch_profiles] SKIPPED vrect for batch={batch} col={col} interval#{mi_idx}: end_counter < start_counter ({end_counter} < {start_counter})")
+
+                except Exception as e:
+                    print(f"[run_batch_profiles] ERROR mapping interval #{mi_idx} for batch={batch} col={col}: {e}")
+                    traceback.print_exc()
+                    # continue to next interval
+
             current_row += 1
 
-            for start, end in get_missing_value_intervals(batch_df, col):
-                start_ts = pd.to_datetime(start)
-                end_ts = pd.to_datetime(end)
-                mask_ge = batch_df["Date_time"] >= start_ts
-                mask_le = batch_df["Date_time"] <= end_ts
-                start_counter = int(batch_df.loc[mask_ge, "Batch_Counter"].iloc[0])
-                end_counter = int(batch_df.loc[mask_le, "Batch_Counter"].iloc[-1])
-                fig.add_vrect(x0=start_counter, x1=end_counter, fillcolor="orange", opacity=0.3, line_width=0)
 
     fig.update_layout(
         height=max(400, total_rows * 220),
