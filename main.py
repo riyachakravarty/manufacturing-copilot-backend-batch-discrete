@@ -75,6 +75,24 @@ import json
 
 ###########################-------Generate batch profiles-----------###################
 
+def get_missing_value_intervals(df, column, datetime_col='Date_time'):
+    missing_intervals = []
+    df = df.sort_values(by=datetime_col).reset_index(drop=True)
+    in_interval = False
+    start = None
+    for i in range(len(df)):
+        if pd.isna(df[column].iloc[i]):
+            if not in_interval:
+                start = df[datetime_col].iloc[i]
+                in_interval = True
+        elif in_interval:
+            end = df[datetime_col].iloc[i]
+            missing_intervals.append((start, end))
+            in_interval = False
+    if in_interval and start is not None:
+        missing_intervals.append((start, df[datetime_col].iloc[-1]))
+    return missing_intervals
+
 class BatchProfileRequest(BaseModel):
     columns: List[str]
     batch_numbers: List[str]
