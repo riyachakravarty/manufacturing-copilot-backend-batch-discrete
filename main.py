@@ -27,6 +27,7 @@ from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 from datetime import datetime
 import shap
 from typing import List, Any
+import traceback
 
 
 app = FastAPI()
@@ -98,6 +99,7 @@ class BatchProfileRequest(BaseModel):
     batch_numbers: List[str]
 
 
+
 @app.post("/run_batch_profiles")
 def run_batch_profiles(req: BatchProfileRequest):
     global uploaded_df, augmented_df
@@ -115,20 +117,32 @@ def run_batch_profiles(req: BatchProfileRequest):
     if "Batch_No" not in df.columns:
         return JSONResponse({"error": "'Batch_No' column missing"}, status_code=400)
 
-    # Prepare batch counter
+    # Work on a copy
     df = df.copy()
+
+    # Ensure Date_time exists and is datetime
+    if "Date_time" in df.columns:
+        try:
+            df["Date_time"] = pd.to_datetime(df["Date_time"])
+        except Exception as e:
+            print("[run_batch_profiles] Warning: failed to convert Date_time to datetime:", e)
+            # continue, but mapping may fail
+    else:
+        print("[run_batch_profiles] Warning: Date_time column not found. Missing-value rectangles will not be computed robustly.")
+
+    # Prepare batch counter
     df["Batch_Counter"] = df.groupby("Batch_No").cumcount() + 1
 
-    # Convert batch numbers to string
+    # Normalize Batch_No and requested batch numbers to strings
     df["Batch_No"] = df["Batch_No"].astype(str)
     req.batch_numbers = [str(b) for b in req.batch_numbers]
 
     # Filter data
-    df_filtered = df[df["Batch_No"].isin(req.batch_numbers)]
+    df_filtered = df[df["Batch_No"].isin(req.batch_numbers)].copy()
     if df_filtered.empty:
         return JSONResponse({"error": "No data for selected batches"}, status_code=400)
 
-    # Global x-axis range
+    # Global x-axis range (based on batch counters across selected batches)
     max_counter = int(df_filtered["Batch_Counter"].max())
 
     # Total number of subplots = batches × columns
@@ -150,50 +164,113 @@ def run_batch_profiles(req: BatchProfileRequest):
     # Build subplots row by row
     current_row = 1
     for batch in req.batch_numbers:
-        batch_df = df_filtered[df_filtered["Batch_No"] == batch]
+        batch_df = df_filtered[df_filtered["Batch_No"] == batch].copy()
+
+        # Log batch info
+        print(f"[run_batch_profiles] Processing batch: {batch}, rows: {len(batch_df)}")
+
+        # ensure Date_time sorted for this batch
+        if "Date_time" in batch_df.columns:
+            batch_df = batch_df.sort_values("Date_time").reset_index(drop=True)
+        else:
+            batch_df = batch_df.reset_index(drop=True)
 
         for col in req.columns:
-            fig.add_trace(
-                go.Scatter(
-                    x=batch_df["Batch_Counter"],
-                    y=batch_df[col],
-                    mode="lines",
-                    name=f"{batch} – {col}"
-                ),
-                row=current_row,
-                col=1
-            )
+            # add main trace
+            try:
+                fig.add_trace(
+                    go.Scatter(
+                        x=batch_df["Batch_Counter"],
+                        y=batch_df[col],
+                        mode="lines",
+                        name=f"{batch} – {col}"
+                    ),
+                    row=current_row,
+                    col=1
+                )
+            except Exception as e:
+                print(f"[run_batch_profiles] ERROR adding trace for batch {batch} col {col}: {e}")
+                traceback.print_exc()
 
             # Fix x-axis range for this subplot
-            fig.update_xaxes(
-                range=[1, max_counter],
-                row=current_row,
-                col=1
-            )
+            fig.update_xaxes(range=[1, max_counter], row=current_row, col=1)
+
+            # For debugging: log missing-value intervals for this batch/column
+            try:
+                missing_intervals = get_missing_value_intervals(batch_df, col)
+            except Exception as e:
+                missing_intervals = []
+                print(f"[run_batch_profiles] ERROR computing missing intervals for batch {batch} col {col}: {e}")
+                traceback.print_exc()
+
+            print(f"[run_batch_profiles] batch={batch} col={col} missing_intervals_count={len(missing_intervals)}")
+            for mi_idx, (start, end) in enumerate(missing_intervals):
+                try:
+                    # convert to timestamps
+                    start_ts = pd.to_datetime(start)
+                    end_ts = pd.to_datetime(end)
+
+                    # robustly find batch counters matching these timestamps
+                    if "Date_time" not in batch_df.columns or batch_df["Date_time"].isna().all():
+                        # fallback: if no datetime in batch_df, skip mapping
+                        print(f"[run_batch_profiles] batch={batch} col={col} missing interval {mi_idx} skipped: Date_time missing")
+                        continue
+
+                    # searchsorted gives insertion index for start_ts
+                    # we want the index of the last timestamp <= start_ts (so choose pos-1 if not exact)
+                    times = batch_df["Date_time"]
+                    pos_start = times.searchsorted(start_ts)
+                    if pos_start < len(times) and times.iloc[pos_start] == start_ts:
+                        start_idx = pos_start
+                        start_counter = int(batch_df["Batch_Counter"].iloc[start_idx])
+                        match_type_start = "exact"
+                    else:
+                        # choose previous index (last <= start_ts) if exists, else first
+                        if pos_start == 0:
+                            start_idx = 0
+                        else:
+                            start_idx = pos_start - 1
+                        start_counter = int(batch_df["Batch_Counter"].iloc[start_idx])
+                        match_type_start = "nearest_le"
+
+                    pos_end = times.searchsorted(end_ts)
+                    # for end, we want last index <= end_ts (so pos_end-1 if pos_end not exact)
+                    if pos_end < len(times) and times.iloc[pos_end] == end_ts:
+                        end_idx = pos_end
+                        end_counter = int(batch_df["Batch_Counter"].iloc[end_idx])
+                        match_type_end = "exact"
+                    else:
+                        if pos_end == 0:
+                            end_idx = 0
+                        else:
+                            end_idx = min(pos_end - 1, len(times) - 1)
+                        end_counter = int(batch_df["Batch_Counter"].iloc[end_idx])
+                        match_type_end = "nearest_le"
+
+                    print(f"[run_batch_profiles] batch={batch} col={col} interval#{mi_idx} start_ts={start_ts} end_ts={end_ts} -> start_idx={start_idx} end_idx={end_idx} start_counter={start_counter} end_counter={end_counter} (match:{match_type_start}/{match_type_end})")
+
+                    # Only add rectangle if end_counter >= start_counter (safety)
+                    if end_counter >= start_counter:
+                        fig.add_vrect(
+                            x0=start_counter, x1=end_counter,
+                            fillcolor="orange", opacity=0.3, line_width=0,
+                            row=current_row, col=1
+                        )
+                        print(f"[run_batch_profiles] Added orange vrect for batch={batch} col={col} x0={start_counter} x1={end_counter}")
+                    else:
+                        print(f"[run_batch_profiles] SKIPPED vrect for batch={batch} col={col} interval#{mi_idx}: end_counter < start_counter ({end_counter} < {start_counter})")
+
+                except Exception as e:
+                    print(f"[run_batch_profiles] ERROR mapping interval #{mi_idx} for batch={batch} col={col}: {e}")
+                    traceback.print_exc()
+                    # continue to next interval
 
             current_row += 1
 
-            for start, end in get_missing_value_intervals(batch_df, col):
-                batch_df = batch_df.copy()
-                batch_df["Date_time"] = pd.to_datetime(batch_df["Date_time"])
-
-                start_ts = pd.to_datetime(start)   # from missing interval function
-                end_ts   = pd.to_datetime(end)
-
-                # Now safely map Date_time → Batch_Counter
-                start_counter = int(
-                    batch_df.loc[batch_df["Date_time"] == start_ts, "Batch_Counter"].iloc[0]
-                )
-
-                end_counter = int(
-                    batch_df.loc[batch_df["Date_time"] == end_ts, "Batch_Counter"].iloc[0]
-                )
-                fig.add_vrect(x0=start_counter, x1=end_counter, fillcolor="orange", opacity=0.3, line_width=0)
-
     # Layout settings
     fig.update_layout(
-        height=max(400, total_rows * 350),    # adjustable scrolling height
-        width=900,
+        height=max(400, total_rows * 250),    # make rows smaller so more are visible and page scrolls
+        width=1000,
         showlegend=False,
         template="plotly_white",
         title="Batch Profiles"
@@ -207,7 +284,6 @@ def run_batch_profiles(req: BatchProfileRequest):
             "num_subplots": total_rows,
         }
     )
-
 
 ###########################-------Generate phase wise batch profiles-----------###################
 class Condition(BaseModel):
