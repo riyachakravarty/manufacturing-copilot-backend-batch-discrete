@@ -976,6 +976,7 @@ def visualize_outlier_data(prompt):
     fig.update_layout(title=f"Outlier Analysis ({method.upper()}): '{column}'", xaxis_title='Date_time', yaxis_title=column, hovermode="x unified", height=500, width=700)
     return fig.to_json()
 
+
 @app.get("/missing_datetime_intervals")
 def missing_datetime_intervals():
     global uploaded_df
@@ -985,19 +986,116 @@ def missing_datetime_intervals():
     formatted = [{"start": str(start), "end": str(end)} for start, end in intervals]
     return JSONResponse(content={"intervals": formatted})
 
+
+#Helper for adding phase name column
+def add_phase_name_column(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Returns a copy of df with a new column 'Phase_name' filled
+    between phase_start and phase_end for each phase in each batch.
+    Assumptions:
+      - For each phase, there is a '{phase}_start' and '{phase}_end' column (boolean).
+      - For each batch, exactly 1 start and 1 end are True per phase.
+      - end index > start index.
+    """
+    if "Batch_No" not in df.columns:
+        # If no batch column, we can't do phase-by-batch logic
+        print("[add_phase_name_column] 'Batch_No' not found in df.columns")
+        return df
+
+    df = df.copy()
+    # Normalize datetime
+    if "Date_time" in df.columns:
+        df["Date_time"] = pd.to_datetime(df["Date_time"])
+
+    # Initialize / reset Phase_name
+    if "Phase_name" not in df.columns:
+        df["Phase_name"] = None
+    else:
+        df["Phase_name"] = None
+
+    # Detect phase start/end columns
+    start_cols = [c for c in df.columns if c.endswith("_start")]
+    print(f"[add_phase_name_column] Found phase start columns: {start_cols}")
+
+    for start_col in start_cols:
+        phase = start_col[:-6]  # remove "_start"
+        end_col = f"{phase}_end"
+        if end_col not in df.columns:
+            print(f"[add_phase_name_column] No matching end column for phase '{phase}'")
+            continue
+
+        print(f"[add_phase_name_column] Processing phase '{phase}'")
+
+        # For each batch, fill Phase_name between start and end
+        for batch, batch_df in df.groupby("Batch_No"):
+            start_idxs = batch_df.index[batch_df[start_col] == True].tolist()
+            end_idxs = batch_df.index[batch_df[end_col] == True].tolist()
+
+            if not start_idxs or not end_idxs:
+                # No valid markers in this batch for this phase
+                continue
+
+            start_idx = start_idxs[0]
+            end_idx = end_idxs[0]
+
+            if end_idx <= start_idx:
+                print(
+                    f"[add_phase_name_column] Skipping phase '{phase}' in batch {batch}: "
+                    f"end_idx ({end_idx}) <= start_idx ({start_idx})"
+                )
+                continue
+
+            print(
+                f"[add_phase_name_column] Setting Phase_name='{phase}' "
+                f"for batch={batch}, rows {start_idx} to {end_idx}"
+            )
+            df.loc[start_idx:end_idx, "Phase_name"] = phase
+
+    return df
+
+
 @app.get("/missing_value_intervals")
 def missing_value_intervals(column: str):
-    print(f"Column received: {column}")
+    global df  # augmented_df or uploaded_df
     
-    global augmented_df
-    if augmented_df is None:
-        return JSONResponse(content={"error": "Missing Date Times treatment must be applied first."}, status_code=400)
-    if column not in augmented_df.columns:
-        return JSONResponse(content={"error": f"Column '{column}' not found in data."}, status_code=400)
+    if df is None:
+        return JSONResponse({"error": "No data uploaded"}, status_code=400)
 
-    intervals = get_missing_value_intervals(augmented_df, column)
-    formatted = [{"start": str(start), "end": str(end)} for start, end in intervals]
-    return JSONResponse(content={"intervals": formatted})
+    if column not in df.columns:
+        return JSONResponse({"error": f"Column '{column}' not found"}, status_code=400)
+
+    intervals = get_missing_value_intervals(df, column)
+    result_rows = []
+
+    for interval_start, interval_end in intervals:
+
+        sub = df[(df["Date_time"] >= interval_start) & (df["Date_time"] <= interval_end)].copy()
+        sub = sub.sort_values("Date_time")
+
+        # Add helper column to detect breaks in batch/phase groups
+        sub["group_break"] = (
+            (sub["Batch_No"] != sub["Batch_No"].shift(1)) |
+            (sub["Phase_name"] != sub["Phase_name"].shift(1))
+        ).astype(int)
+
+        # Group consecutive rows with same Batch_No + Phase_name
+        group_ids = sub["group_break"].cumsum()
+        sub["group_id"] = group_ids
+
+        grouped = sub.groupby("group_id")
+
+        for gid, g in grouped:
+            result_rows.append({
+                "Interval_Start": str(interval_start),
+                "Interval_End": str(interval_end),
+                "Timestamp_From": str(g["Date_time"].min()),
+                "Timestamp_To": str(g["Date_time"].max()),
+                "Batch_No": str(g["Batch_No"].iloc[0]),
+                "Phase_Name": str(g["Phase_name"].iloc[0]),
+            })
+
+    return JSONResponse(content={"table": result_rows})
+
 
 @app.get("/outlier_intervals")
 def outlier_intervals(column: str, method: str):
