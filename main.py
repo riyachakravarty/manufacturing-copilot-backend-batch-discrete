@@ -1056,7 +1056,8 @@ def add_phase_name_column(df: pd.DataFrame) -> pd.DataFrame:
 
 @app.get("/missing_value_intervals")
 def missing_value_intervals(column: str):
-    global df  # augmented_df or uploaded_df
+    global uploaded_df, augmented_df
+    df = augmented_df if augmented_df is not None else uploaded_df
     
     if df is None:
         return JSONResponse({"error": "No data uploaded"}, status_code=400)
