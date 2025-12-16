@@ -1057,35 +1057,61 @@ def add_phase_name_column(df: pd.DataFrame) -> pd.DataFrame:
 @app.get("/missing_value_intervals")
 def missing_value_intervals(column: str):
     global uploaded_df, augmented_df
+
+    # Decide which DF to use
     df = augmented_df if augmented_df is not None else uploaded_df
-    
+
     if df is None:
         return JSONResponse({"error": "No data uploaded"}, status_code=400)
 
     if column not in df.columns:
         return JSONResponse({"error": f"Column '{column}' not found"}, status_code=400)
 
+    # ----------------------------
+    # 🔥 ADD PHASE NAME COLUMN
+    # ----------------------------
+    try:
+        df = add_phase_name_column(df.copy())   # <— THIS FIXES THE KEYERROR
+    except Exception as e:
+        return JSONResponse(
+            {"error": f"Failed to construct Phase_name column: {e}"},
+            status_code=500
+        )
+
+    # Ensure Date_time is datetime
+    df["Date_time"] = pd.to_datetime(df["Date_time"])
+
+    # ----------------------------
+    # 🔥 Compute missing-value intervals on entire df
+    # ----------------------------
     intervals = get_missing_value_intervals(df, column)
     result_rows = []
 
+    # ----------------------------
+    # 🔥 Build grouped table rows
+    # ----------------------------
     for interval_start, interval_end in intervals:
 
-        sub = df[(df["Date_time"] >= interval_start) & (df["Date_time"] <= interval_end)].copy()
+        sub = df[
+            (df["Date_time"] >= interval_start)
+            & (df["Date_time"] <= interval_end)
+        ].copy()
+
+        if sub.empty:
+            continue
+
         sub = sub.sort_values("Date_time")
 
-        # Add helper column to detect breaks in batch/phase groups
+        # Detect break in batch or phase
         sub["group_break"] = (
             (sub["Batch_No"] != sub["Batch_No"].shift(1)) |
             (sub["Phase_name"] != sub["Phase_name"].shift(1))
         ).astype(int)
 
-        # Group consecutive rows with same Batch_No + Phase_name
-        group_ids = sub["group_break"].cumsum()
-        sub["group_id"] = group_ids
+        # Shared group id
+        sub["group_id"] = sub["group_break"].cumsum()
 
-        grouped = sub.groupby("group_id")
-
-        for gid, g in grouped:
+        for gid, g in sub.groupby("group_id"):
             result_rows.append({
                 "Interval_Start": str(interval_start),
                 "Interval_End": str(interval_end),
@@ -1096,6 +1122,7 @@ def missing_value_intervals(column: str):
             })
 
     return JSONResponse(content={"table": result_rows})
+
 
 
 @app.get("/outlier_intervals")
