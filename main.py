@@ -1058,70 +1058,97 @@ def add_phase_name_column(df: pd.DataFrame) -> pd.DataFrame:
 def missing_value_intervals(column: str):
     global uploaded_df, augmented_df
 
-    # Decide which DF to use
     df = augmented_df if augmented_df is not None else uploaded_df
 
     if df is None:
+        print("[MVI] ERROR: No data uploaded")
         return JSONResponse({"error": "No data uploaded"}, status_code=400)
 
     if column not in df.columns:
+        print(f"[MVI] ERROR: Column {column} not found in DF")
         return JSONResponse({"error": f"Column '{column}' not found"}, status_code=400)
 
     # ----------------------------
-    # 🔥 ADD PHASE NAME COLUMN
+    # Add Phase Name Column
     # ----------------------------
     try:
-        df = add_phase_name_column(df.copy())   # <— THIS FIXES THE KEYERROR
+        print("[MVI] Adding Phase_name column using add_phase_name_column()")
+        df = add_phase_name_column(df.copy())
     except Exception as e:
+        print(f"[MVI] ERROR constructing Phase_name column: {e}")
         return JSONResponse(
             {"error": f"Failed to construct Phase_name column: {e}"},
             status_code=500
         )
 
-    # Ensure Date_time is datetime
     df["Date_time"] = pd.to_datetime(df["Date_time"])
 
     # ----------------------------
-    # 🔥 Compute missing-value intervals on entire df
+    # Compute missing intervals
     # ----------------------------
     intervals = get_missing_value_intervals(df, column)
+    print(f"[MVI] Found {len(intervals)} missing-value intervals for column={column}")
+
     result_rows = []
 
     # ----------------------------
-    # 🔥 Build grouped table rows
+    # Iterate through each interval
     # ----------------------------
-    for interval_start, interval_end in intervals:
+    for interval_idx, (interval_start, interval_end) in enumerate(intervals):
+        print(f"\n[MVI] ===== Interval #{interval_idx} =====")
+        print(f"[MVI] Start: {interval_start}, End: {interval_end}")
 
+        # Extract only rows inside this missing interval
         sub = df[
             (df["Date_time"] >= interval_start)
             & (df["Date_time"] <= interval_end)
         ].copy()
 
+        print(f"[MVI] Rows inside interval: {len(sub)}")
+
         if sub.empty:
+            print("[MVI] Interval contains NO timestamps, skipping.")
             continue
 
         sub = sub.sort_values("Date_time")
 
-        # Detect break in batch or phase
+        # Print first few rows for debugging
+        print("[MVI] Sample interval rows:")
+        print(sub[["Date_time", "Batch_No", "Phase_name"]].head())
+
+        # Detect break in batch OR phase
         sub["group_break"] = (
             (sub["Batch_No"] != sub["Batch_No"].shift(1)) |
             (sub["Phase_name"] != sub["Phase_name"].shift(1))
         ).astype(int)
 
-        # Shared group id
         sub["group_id"] = sub["group_break"].cumsum()
 
+        print("[MVI] Unique groups found:", sub["group_id"].nunique())
+
+        # ----------------------------
+        # Build grouped summary rows
+        # ----------------------------
         for gid, g in sub.groupby("group_id"):
-            result_rows.append({
+            row = {
                 "Interval_Start": str(interval_start),
                 "Interval_End": str(interval_end),
                 "Timestamp_From": str(g["Date_time"].min()),
                 "Timestamp_To": str(g["Date_time"].max()),
                 "Batch_No": str(g["Batch_No"].iloc[0]),
                 "Phase_Name": str(g["Phase_name"].iloc[0]),
-            })
+            }
+
+            print(f"[MVI] Summary row (group {gid}): {row}")
+
+            result_rows.append(row)
+
+    print("\n[MVI] ===== FINAL SUMMARY TABLE =====")
+    for r in result_rows:
+        print(r)
 
     return JSONResponse(content={"table": result_rows})
+
 
 
 
