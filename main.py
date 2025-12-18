@@ -1129,8 +1129,9 @@ def missing_value_intervals(column: str):
         # ----------------------------
         # Build grouped summary rows
         # ----------------------------
-        for gid, g in sub.groupby("group_id"):
+        for i, (gid, g) in enumerate(sub.groupby("group_id")):
             row = {
+                "Row_ID": f"{interval_start}_{interval_end}_{i}",
                 "Interval_Start": str(interval_start),
                 "Interval_End": str(interval_end),
                 "Timestamp_From": str(g["Date_time"].min()),
