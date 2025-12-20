@@ -1243,42 +1243,168 @@ def apply_treatment(payload: dict):
     print("Shape of augmented_df after apply_treatment:", augmented_df.shape)
     return {"message": "Treatment applied successfully!", "columns": list(augmented_df.columns)}
 
+
+
 @app.post("/apply_missing_value_treatment")
-def apply_missing_value_treatment(payload: dict):
-    global augmented_df
-    print("Shape of augmented_df at start of apply_missing_value_treatment:", augmented_df.shape if 'augmented_df' in globals() else "augmented_df not found")
+def apply_missing_value_treatment(req: dict):
+    """
+    Apply missing-value treatment to selected missing-interval summary rows.
+    Works for:
+       - Mean / Median per batch + phase
+       - Forward Fill inside masked block
+       - Backward Fill inside masked block
+    """
 
-    column = payload.get("column")
-    intervals = payload.get("intervals", [])
-    method = payload.get("method")
+    global uploaded_df, augmented_df
 
-    if not column or not intervals or not method:
-        return JSONResponse(content={"error": "Invalid payload: column, intervals, and method are required."}, status_code=400)
+    # Decide which DF to modify
+    df = augmented_df if augmented_df is not None else uploaded_df
+    df = df.copy()
 
-    if augmented_df is None:
-        return JSONResponse(content={"error": "Missing Date Times treatment must be applied first."}, status_code=400)
+    if df is None:
+        return JSONResponse({"error": "No data uploaded"}, status_code=400)
 
-    for interval in intervals:
-        start = pd.to_datetime(interval['start'])
-        end = pd.to_datetime(interval['end'])
-        mask = (augmented_df['Date_time'] >= start) & (augmented_df['Date_time'] <= end)
+    # ---- Extract request fields ----
+    column = req.get("column")
+    selected_row_ids = req.get("intervals", [])
+    method = req.get("method", "").lower()
 
-        if method == "Delete rows":
-            augmented_df = augmented_df[~mask]
-        elif method == "Forward fill":
-            augmented_df.loc[mask, column] = augmented_df[column].ffill()
-        elif method == "Backward fill":
-            augmented_df.loc[mask, column] = augmented_df[column].bfill()
-        elif method == "Mean":
-            mean_val = augmented_df[column].mean()
-            augmented_df.loc[mask, column] = mean_val
-        elif method == "Median":
-            median_val = augmented_df[column].median()
-            augmented_df.loc[mask, column] = median_val
+    print("\n[AMVT] ================= APPLY MISSING VALUE TREATMENT ==================")
+    print(f"[AMVT] Column: {column}")
+    print(f"[AMVT] Selected Row IDs: {selected_row_ids}")
+    print(f"[AMVT] Method: {method}")
+
+    if column not in df.columns:
+        return JSONResponse({"error": f"Column '{column}' not in dataset"}, status_code=400)
+
+    # Ensure datetime consistency
+    df["Date_time"] = pd.to_datetime(df["Date_time"])
+    df["Batch_No"] = df["Batch_No"].astype(str)
+
+    # Add Phase_name column (required for grouping)
+    try:
+        df = add_phase_name_column(df)
+    except Exception as e:
+        print("[AMVT] ERROR building Phase_name:", e)
+        return JSONResponse({"error": f"Failed to build Phase_name: {e}"}, status_code=500)
+
+    # ---- Reconstruct summary_rows (same logic as missing_value_intervals) ----
+    summary_rows = []
+    intervals = get_missing_value_intervals(df, column)
+
+    for interval_start, interval_end in intervals:
+        sub = df[
+            (df["Date_time"] >= interval_start)
+            & (df["Date_time"] <= interval_end)
+        ].copy()
+
+        if sub.empty:
+            continue
+
+        sub = sub.sort_values("Date_time")
+
+        sub["group_break"] = (
+            (sub["Batch_No"] != sub["Batch_No"].shift(1)) |
+            (sub["Phase_name"] != sub["Phase_name"].shift(1))
+        ).astype(int)
+
+        sub["group_id"] = sub["group_break"].cumsum()
+
+        for i, (gid, g) in enumerate(sub.groupby("group_id")):
+            summary_rows.append({
+                "Row_ID": f"{interval_start}_{interval_end}_{i}",
+                "Interval_Start": interval_start,
+                "Interval_End": interval_end,
+                "Timestamp_From": g["Date_time"].min(),
+                "Timestamp_To": g["Date_time"].max(),
+                "Batch_No": g["Batch_No"].iloc[0],
+                "Phase_Name": g["Phase_name"].iloc[0],
+            })
+
+    # ---- Treat only selected summary rows ----
+    for row in summary_rows:
+        if row["Row_ID"] not in selected_row_ids:
+            continue
+
+        batch = str(row["Batch_No"])
+        phase = row["Phase_Name"]
+        ts_from = pd.to_datetime(row["Timestamp_From"])
+        ts_to   = pd.to_datetime(row["Timestamp_To"])
+
+        print(f"\n[AMVT] --- Treating Row_ID={row['Row_ID']} batch={batch}, phase={phase} ---")
+        print(f"       block: {ts_from} → {ts_to}")
+
+        # Mask for missing segment
+        mask = (
+            (df["Batch_No"] == batch) &
+            (df["Date_time"] >= ts_from) &
+            (df["Date_time"] <= ts_to)
+        )
+
+        segment = df.loc[mask, column]
+        print(f"[AMVT] Missing block size: {segment.isna().sum()} rows")
+
+        # ---------- MEAN ----------
+        if method == "mean":
+            # Compute mean only for SAME batch + SAME phase
+            ref_mask = (df["Batch_No"] == batch)
+            if phase and phase != "None":
+                ref_mask &= (df["Phase_name"] == phase)
+
+            mean_val = df.loc[ref_mask, column].dropna().mean()
+            print(f"[AMVT] Mean for batch={batch}, phase={phase}: {mean_val}")
+
+            df.loc[mask, column] = df.loc[mask, column].fillna(mean_val)
+
+        # ---------- MEDIAN ----------
+        elif method == "median":
+            ref_mask = (df["Batch_No"] == batch)
+            if phase and phase != "None":
+                ref_mask &= (df["Phase_name"] == phase)
+
+            median_val = df.loc[ref_mask, column].dropna().median()
+            print(f"[AMVT] Median for batch={batch}, phase={phase}: {median_val}")
+
+            df.loc[mask, column] = df.loc[mask, column].fillna(median_val)
+
+        # ---------- FORWARD FILL ----------
+        elif method == "forward fill":
+            prev_mask = (df["Batch_No"] == batch) & (df["Date_time"] < ts_from)
+            if phase and phase != "None":
+                prev_mask &= (df["Phase_name"] == phase)
+
+            prev_val = df.loc[prev_mask, column].dropna().iloc[-1] if prev_mask.any() else None
+            print(f"[AMVT] Previous value for ffill: {prev_val}")
+
+            filled_segment = segment.copy().fillna(prev_val)
+            df.loc[mask, column] = filled_segment
+
+        # ---------- BACKWARD FILL ----------
+        elif method == "backward fill":
+            next_mask = (df["Batch_No"] == batch) & (df["Date_time"] > ts_to)
+            if phase and phase != "None":
+                next_mask &= (df["Phase_name"] == phase)
+
+            next_val = df.loc[next_mask, column].dropna().iloc[0] if next_mask.any() else None
+            print(f"[AMVT] Next value for bfill: {next_val}")
+
+            filled_segment = segment.copy().fillna(next_val)
+            df.loc[mask, column] = filled_segment
+
         else:
-            return JSONResponse(content={"error": f"Unknown method: {method}"}, status_code=400)
+            return JSONResponse({"error": f"Unknown method '{method}'"}, status_code=400)
 
-    return {"message": "Treatment applied successfully!", "columns": list(augmented_df.columns)}
+    # Save updated df
+    augmented_df = df.copy()
+
+
+    return JSONResponse({
+        "message": "Missing value treatment applied successfully",
+        "updated_rows": len(selected_row_ids),
+        "method": method,
+        "columns": list(augmented_df.columns)
+    })
+
 
 @app.post("/apply_outlier_treatment")
 def apply_outlier_treatment(payload: dict):
