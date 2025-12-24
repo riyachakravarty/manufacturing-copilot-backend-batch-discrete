@@ -947,34 +947,253 @@ def get_outlier_intervals(df, column, method='z-score', datetime_col='Date_time'
         outlier_intervals.append((start, df[datetime_col].iloc[-1]))
     return outlier_intervals
 
-def visualize_outlier_data(prompt):
-    global augmented_df
+
+@app.post("/outlier_analysis")
+def outlier_analysis(req: dict):
+    """
+    Performs outlier analysis in two modes:
+
+    1. OVERALL:
+        - Uses Batch_Counter
+        - For each counter position (1..max), compare values across batches
+        - Detect outliers using Z-score / IQR
+        - Count outliers per batch
+        - Percentage = outlier_count / batch_max_counter
+
+    2. PHASEWISE:
+        - Uses Phase_Counter for SELECTED phase only
+        - Align batches by phase counter
+        - Outlier % denominator = max phase counter for that batch
+    """
+
+    global uploaded_df, augmented_df
     df = augmented_df if augmented_df is not None else uploaded_df
     if df is None:
-        raise ValueError("No data uploaded yet.")
-    match = re.search(r"selected variable is ['\"]?(.+?)['\"]?(?=\s+using method|$)", prompt, re.IGNORECASE)
-    if not match:
-        print(f"[VISUALIZE_OUTLIER_DATA] Could not parse selected variable from prompt: {prompt}")
-        return "Could not find selected variable in prompt."
-    column = match.group(1).strip()
-    print(f"[Vizualize function] Selected variable parsed: {column}")
-    if column not in df.columns:
-        return f"Column '{column}' not in dataframe."
-    method = "zscore"
-    if "iqr" in prompt.lower():
-        method = "iqr"
-    if column not in df.columns:
-        return f"Column '{column}' not found in data."
-    if 'Date_time' not in df.columns:
-        return "'Date_time' column is missing."
+        return JSONResponse({"error": "No data uploaded"}, status_code=400)
 
-    intervals = get_outlier_intervals(df, column, method=method)
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df['Date_time'], y=df[column], mode='lines+markers', name=column, line=dict(color='blue')))
-    for start, end in intervals:
-        fig.add_vrect(x0=start, x1=end, fillcolor="purple", opacity=0.3, line_width=0)
-    fig.update_layout(title=f"Outlier Analysis ({method.upper()}): '{column}'", xaxis_title='Date_time', yaxis_title=column, hovermode="x unified", height=500, width=700)
-    return fig.to_json()
+    # Extract inputs
+    analysis_type = req.get("analysis_type")     # overall / phasewise
+    column = req.get("column")
+    method = req.get("method")                   # zscore / iqr
+    perc_threshold = req.get("percOutliersInBatch")
+    selected_phase = req.get("phase")            # May be None for overall
+
+    if column not in df.columns:
+        return JSONResponse({"error": f"Column '{column}' not found"}, status_code=400)
+
+    df = df.copy()
+    df["Batch_No"] = df["Batch_No"].astype(str)
+    df["Date_time"] = pd.to_datetime(df["Date_time"])
+
+    # Batch counter for overall mode
+    df["Batch_Counter"] = df.groupby("Batch_No").cumcount() + 1
+
+    # -----------------------------
+    # Outlier detection function
+    # -----------------------------
+    def detect_outliers(values):
+        values = pd.Series(values).dropna()
+        if len(values) < 2:
+            return [False] * len(values)
+
+        if method.lower() == "zscore":
+            mean = values.mean()
+            std = values.std()
+            if std == 0:
+                return [False] * len(values)
+            z = (values - mean) / std
+            return (abs(z) > 3).tolist()
+
+        if method.lower() == "iqr":
+            q1 = values.quantile(0.25)
+            q3 = values.quantile(0.75)
+            iqr = q3 - q1
+            lower = q1 - 1.5 * iqr
+            upper = q3 + 1.5 * iqr
+            return ((values < lower) | (values > upper)).tolist()
+
+        return [False] * len(values)
+
+    # Track outlier counts per batch
+    outlier_counts = {b: 0 for b in df["Batch_No"].unique()}
+
+    # ==========================================================
+    # 🔥 CASE 1 — OVERALL OUTLIER ANALYSIS
+    # ==========================================================
+    if analysis_type == "overall":
+
+        for batch in df["Batch_No"].unique():
+            bdf = df[df["Batch_No"] == batch]
+            batch_max_counter = bdf["Batch_Counter"].max()
+
+            for pos in range(1, batch_max_counter + 1):
+
+                subset = df[df["Batch_Counter"] == pos]
+
+                # Skip positions with fewer than 2 batches
+                if len(subset) < 2:
+                    continue
+
+                values = subset[column]
+                mask = detect_outliers(values)
+
+                for (idx, is_out) in zip(subset.index, mask):
+                    if is_out:
+                        bno = df.loc[idx, "Batch_No"]
+                        outlier_counts[bno] += 1
+
+    # ==========================================================
+    # 🔥 CASE 2 — PHASEWISE OUTLIER ANALYSIS
+    # ==========================================================
+    elif analysis_type == "phasewise":
+
+        if not selected_phase:
+            return JSONResponse({"error": "Phase name required for phasewise analysis"}, status_code=400)
+
+        df = add_phase_name_column(df.copy())
+
+        # Only rows belonging to selected phase
+        phase_df = df[df["Phase_name"] == selected_phase].copy()
+
+        if phase_df.empty:
+            return JSONResponse({"error": f"No rows found for phase '{selected_phase}'"}, status_code=400)
+
+        # Create phase counter per batch
+        phase_df["Phase_Counter"] = phase_df.groupby("Batch_No").cumcount() + 1
+
+        for batch in phase_df["Batch_No"].unique():
+            bdf = phase_df[phase_df["Batch_No"] == batch]
+            batch_max_c = bdf["Phase_Counter"].max()
+
+            for pos in range(1, batch_max_c + 1):
+
+                subset = phase_df[phase_df["Phase_Counter"] == pos]
+
+                if len(subset) < 2:
+                    continue  # cannot detect outliers with <2 batches
+
+                values = subset[column]
+                mask = detect_outliers(values)
+
+                for (idx, is_out) in zip(subset.index, mask):
+                    if is_out:
+                        bno = df.loc[idx, "Batch_No"]
+                        outlier_counts[bno] += 1
+
+    else:
+        return JSONResponse({"error": "Invalid analysis type"}, status_code=400)
+
+    # ==========================================================
+    # 🔥 Determine outlier batches using % threshold
+    # ==========================================================
+    outlier_batches = []
+
+    for batch in df["Batch_No"].unique():
+
+        if analysis_type == "overall":
+            denom = df[df["Batch_No"] == batch]["Batch_Counter"].max()
+        else:
+            denom = phase_df[phase_df["Batch_No"] == batch]["Phase_Counter"].max() \
+                    if batch in phase_df["Batch_No"].values else 0
+
+        if denom == 0:
+            continue
+
+        perc = (outlier_counts[batch] / denom) * 100
+
+        if perc >= perc_threshold:
+            outlier_batches.append(batch)
+
+    if not outlier_batches:
+        return JSONResponse({"message": "No batches exceed outlier threshold."})
+
+    # ==========================================================
+    # 🔥 BUILD PLOTS OF OUTLIER BATCHES
+    # ==========================================================
+    df_plot = df[df["Batch_No"].isin(outlier_batches)].copy()
+
+    # Determine x-axis limit
+    if analysis_type == "overall":
+        x_max = df_plot["Batch_Counter"].max()
+        counter_name = "Batch_Counter"
+    else:
+        x_max = phase_df["Phase_Counter"].max()
+        counter_name = "Phase_Counter"
+
+    # Precompute outlier positions for faster plotting
+    outlier_positions = {b: [] for b in outlier_batches}
+
+    if analysis_type == "overall":
+        ref_df = df
+    else:
+        ref_df = phase_df
+
+    for pos in range(1, x_max + 1):
+        subset = ref_df[ref_df[counter_name] == pos]
+        if len(subset) < 2:
+            continue
+        values = subset[column]
+        mask = detect_outliers(values)
+        for (idx, is_out) in zip(subset.index, mask):
+            if is_out:
+                batch = ref_df.loc[idx, "Batch_No"]
+                if batch in outlier_positions:
+                    outlier_positions[batch].append(pos)
+
+    # Build plot
+    fig = make_subplots(rows=len(outlier_batches), cols=1, shared_xaxes=True)
+
+    row = 1
+    for batch in outlier_batches:
+        bdf = df_plot[df_plot["Batch_No"] == batch]
+
+        fig.add_trace(
+            go.Scatter(
+                x=bdf[counter_name],
+                y=bdf[column],
+                mode="lines",
+                name=f"Batch {batch}"
+            ),
+            row=row, col=1
+        )
+
+        # Add red markers at outlier positions
+        for pos in outlier_positions[batch]:
+            val = bdf[bdf[counter_name] == pos][column].values
+            if len(val) > 0:
+                fig.add_vline(
+            x=pos,
+            line=dict(color="red", width=2, dash="dot"),
+            row=row, col=1
+        )
+                fig.add_trace(
+                    go.Scatter(
+                        x=[pos],
+                        y=[val[0]],
+                        mode="markers",
+                        marker=dict(color="red", size=8),
+                        name=f"Outlier {batch}"
+                    ),
+                    row=row, col=1
+                )
+
+        fig.update_xaxes(range=[1, x_max], row=row, col=1)
+        row += 1
+
+    fig.update_layout(
+        height=350 * len(outlier_batches),
+        width=1000,
+        template="plotly_white",
+        title="Outlier Batches"
+    )
+
+    return JSONResponse({
+        "type": "plot",
+        "data": json.loads(fig.to_json()),
+        "outlier_batches": outlier_batches,
+        "message": "Outlier analysis complete"
+    })
+
 
 
 @app.get("/missing_datetime_intervals")
@@ -1195,6 +1414,14 @@ def get_batchnos():
         return JSONResponse(content={"batch_numbers": unique_batches})
     
     return JSONResponse(content={"error": "No file uploaded"}, status_code=400)
+
+@app.get("/get_phases")
+def get_phases():
+    global augmented_df
+    df = augmented_df.copy()
+    df = add_phase_name_column(df)
+    phases = sorted(df["Phase_name"].dropna().unique().tolist())
+    return {"phases": phases}
 
 
 @app.post("/apply_treatment")
