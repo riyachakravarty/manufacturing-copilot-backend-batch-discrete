@@ -440,7 +440,7 @@ def define_phases(req: DefinePhasesRequest):
         return JSONResponse({"error": "'Batch_No' column missing"}, status_code=400)
 
     # ensure Batch_No string and compute batch counter
-    df["Batch_No"] = df["Batch_No"].astype(str)
+    df["Batch_No"] = df["Batch_No"].astype(str).str.replace(".0", "", regex=False)
     df["Batch_Counter"] = df.groupby("Batch_No").cumcount() + 1
     df["Date_time"] = pd.to_datetime(df["Date_time"])
 
@@ -535,7 +535,7 @@ def define_phases(req: DefinePhasesRequest):
 
     # Optionally return batch profiles with vertical lines for each phase start/end
     # If client provided batch_numbers and plot_columns, use them; otherwise plot all batches and all req-referenced numeric columns
-    plot_batches = req.batch_numbers if req.batch_numbers else sorted(df["Batch_No"].unique())
+    plot_batches = [str(b).replace(".0", "") for b in req.batch_numbers] if req.batch_numbers else sorted(df["Batch_No"].unique())
     if req.plot_columns:
         plot_columns = req.plot_columns
     else:
