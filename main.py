@@ -61,19 +61,6 @@ def summarize_data(_):
     return "No data uploaded."
 
 
-class BatchProfileRequest(BaseModel):
-    columns: List[str]
-    batch_numbers: List[str]
-
-from fastapi import HTTPException
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
-from typing import List
-import pandas as pd
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import json
-
 ###########################-------Generate batch profiles-----------###################
 
 def get_missing_value_intervals(df, column, datetime_col='Date_time'):
@@ -134,8 +121,9 @@ def run_batch_profiles(req: BatchProfileRequest):
     df["Batch_Counter"] = df.groupby("Batch_No").cumcount() + 1
 
     # Normalize Batch_No and requested batch numbers to strings
-    df["Batch_No"] = df["Batch_No"].astype(str)
-    req.batch_numbers = [str(b) for b in req.batch_numbers]
+    df["Batch_No"] = df["Batch_No"].astype(str).str.replace(".0", "", regex=False)
+    
+    req.batch_numbers = [str(b).replace(".0", "") for b in req.batch_numbers]
 
     # Filter data
     df_filtered = df[df["Batch_No"].isin(req.batch_numbers)].copy()
