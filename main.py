@@ -1360,20 +1360,141 @@ def missing_value_intervals(column: str):
 
 
 
-@app.get("/outlier_intervals")
-def outlier_intervals(column: str, method: str):
-    print(f"Column received: {column}")
-    
-    global augmented_df
-    df = augmented_df if augmented_df is not None else uploaded_df
-    if df is None:
-        raise ValueError("No data uploaded yet.")
-    if column not in df.columns:
-        return JSONResponse(content={"error": f"Column '{column}' not found in data."}, status_code=400)
+@app.get("/outlier_intervals_summary")
+def outlier_intervals_summary(
+    column: str,
+    method: str,
+    analysis_type: str,
+    phase: str | None = None
+):
+    """
+    Returns summary rows of outliers grouped by Batch, Phase, and timestamp range.
+    Output fields:
+        Row_ID, Batch_No, Phase_Name, Timestamp, Counter
+    """
 
-    intervals = get_outlier_intervals(df, column, method)
-    formatted = [{"start": str(start), "end": str(end)} for start, end in intervals]
-    return JSONResponse(content={"intervals": formatted})
+    global uploaded_df, augmented_df
+    df = augmented_df if augmented_df is not None else uploaded_df
+
+    if df is None:
+        return JSONResponse({"error": "No data uploaded"}, status_code=400)
+
+    if column not in df.columns:
+        return JSONResponse({"error": f"Column '{column}' not found"}, status_code=400)
+
+    df = df.copy()
+    df["Batch_No"] = df["Batch_No"].astype(str)
+    df["Date_time"] = pd.to_datetime(df["Date_time"])
+
+    # Always create phase names so phasewise works
+    df = add_phase_name_column(df)
+
+    # -------------------------
+    # Helper: outlier detector
+    # -------------------------
+    def detect_outliers(values_series):
+        values = values_series.dropna()
+        if len(values) < 2:
+            return [False] * len(values_series)
+
+        if method.lower() == "zscore":
+            mean = values.mean()
+            std = values.std()
+            if std == 0:
+                return [False] * len(values_series)
+            z = (values - mean) / std
+            mask = (abs(z) > 3)
+
+        elif method.lower() == "iqr":
+            q1 = values.quantile(0.25)
+            q3 = values.quantile(0.75)
+            iqr = q3 - q1
+            lower = q1 - 1.5 * iqr
+            upper = q3 + 1.5 * iqr
+            mask = (values < lower) | (values > upper)
+        else:
+            mask = pd.Series([False] * len(values_series))
+
+        # Map mask back to original index
+        full_mask = values_series.apply(lambda x: False)
+        full_mask.loc[values.index] = mask
+        return full_mask.tolist()
+
+    # ----------------------------------------------------------------------------
+    # CASE 1 — OVERALL OUTLIER ANALYSIS (batch-counter alignment)
+    # ----------------------------------------------------------------------------
+    if analysis_type == "overall":
+        df["Batch_Counter"] = df.groupby("Batch_No").cumcount() + 1
+        max_counter = df["Batch_Counter"].max()
+
+        summary_rows = []
+
+        for pos in range(1, max_counter + 1):
+            subset = df[df["Batch_Counter"] == pos]
+            if len(subset) < 2:
+                continue
+
+            mask = detect_outliers(subset[column])
+
+            for (idx, is_out) in zip(subset.index, mask):
+                if is_out:
+                    row = df.loc[idx]
+                    summary_rows.append({
+                        "Row_ID": f"{row['Batch_No']}_{pos}_{row["Date_time"]}",
+                        "Batch_No": row["Batch_No"],
+                        "Phase_Name": row["Phase_name"],
+                        "Counter": int(pos),
+                        "Timestamp": str(row["Date_time"])
+                    })
+
+        return JSONResponse({"table": summary_rows})
+
+    # ----------------------------------------------------------------------------
+    # CASE 2 — PHASEWISE OUTLIER ANALYSIS
+    # ----------------------------------------------------------------------------
+    elif analysis_type == "phasewise":
+
+        if not phase or phase == "None":
+            return JSONResponse(
+                {"error": "Phase name must be provided for phasewise analysis"},
+                status_code=400
+            )
+
+        phase_df = df[df["Phase_name"] == phase].copy()
+        if phase_df.empty:
+            return JSONResponse({"error": f"No rows found for phase '{phase}'"}, status_code=400)
+
+        # Create phase counter within each batch
+        phase_df["Phase_Counter"] = phase_df.groupby("Batch_No").cumcount() + 1
+        max_ctr = phase_df["Phase_Counter"].max()
+
+        summary_rows = []
+
+        for pos in range(1, max_ctr + 1):
+            subset = phase_df[phase_df["Phase_Counter"] == pos]
+            if len(subset) < 2:
+                continue
+
+            mask = detect_outliers(subset[column])
+
+            for (idx, is_out) in zip(subset.index, mask):
+                if is_out:
+                    row = df.loc[idx]
+                    summary_rows.append({
+                        "Row_ID": f"{row['Batch_No']}_{phase}_{pos}_{row["Date_time"]}",
+                        "Batch_No": row["Batch_No"],
+                        "Phase_Name": row["Phase_name"],
+                        "Counter": int(pos),
+                        "Timestamp": str(row["Date_time"])
+                    })
+
+        return JSONResponse({"table": summary_rows})
+
+    # ----------------------------------------------------------------------------
+
+    else:
+        return JSONResponse({"error": "Invalid analysis type"}, status_code=400)
+
 
 
 @app.get("/get_columns")
@@ -1622,41 +1743,171 @@ def apply_missing_value_treatment(req: dict):
 
 
 @app.post("/apply_outlier_treatment")
-def apply_outlier_treatment(payload: dict):
-    global augmented_df
-    print("Shape of augmented_df at start of apply_outlier_treatment:", augmented_df.shape if 'augmented_df' in globals() else "augmented_df not found")
+def apply_outlier_treatment(req: dict):
+    """
+    Applies outlier treatment based on selected outlier summary rows.
+    - Works for BOTH overall and phasewise analysis
+    """
 
-    column = payload.get("column")
-    intervals = payload.get("intervals", [])
-    method = payload.get("method")
+    global uploaded_df, augmented_df
+    df = augmented_df if augmented_df is not None else uploaded_df
 
-    if not column or not intervals or not method:
-        return JSONResponse(content={"error": "Invalid payload: column, intervals, and method are required."}, status_code=400)
+    if df is None:
+        return JSONResponse({"error": "No data uploaded"}, status_code=400)
 
-    if augmented_df is None:
-        return JSONResponse(content={"error": "Missing value treatment must be applied first."}, status_code=400)
+    df = df.copy()
+    df["Batch_No"] = df["Batch_No"].astype(str)
+    df["Date_time"] = pd.to_datetime(df["Date_time"])
 
-    for interval in intervals:
-        start = pd.to_datetime(interval['start'])
-        end = pd.to_datetime(interval['end'])
-        mask = (augmented_df['Date_time'] >= start) & (augmented_df['Date_time'] <= end)
+    # --------------- INPUTS ----------------
+    column = req.get("column")
+    method = req.get("method")                       # Mean, Median, Forward fill, Backward fill, Delete rows, Delete batch
+    analysis_type = req.get("analysis_type")         # overall / phasewise
+    selected_row_ids = req.get("selected_rows", [])
+    selected_phase = req.get("phase")                # only phasewise
 
-        if method == "Delete rows":
-            augmented_df = augmented_df[~mask]
-        elif method == "Forward fill":
-            augmented_df.loc[mask, column] = augmented_df[column].ffill()
-        elif method == "Backward fill":
-            augmented_df.loc[mask, column] = augmented_df[column].bfill()
-        elif method == "Mean":
-            mean_val = augmented_df[column].mean()
-            augmented_df.loc[mask, column] = mean_val
-        elif method == "Median":
-            median_val = augmented_df[column].median()
-            augmented_df.loc[mask, column] = median_val
-        else:
-            return JSONResponse(content={"error": f"Unknown method: {method}"}, status_code=400)
+    if column not in df.columns:
+        return JSONResponse({"error": f"Column {column} not found"}, status_code=400)
 
-    return {"message": "Treatment applied successfully!", "columns": list(augmented_df.columns)}
+    # If phasewise, ensure phase name exists
+    if analysis_type == "phasewise":
+        df = add_phase_name_column(df.copy())
+        if selected_phase is None:
+            return JSONResponse({"error": "Phase must be provided for phasewise treatment"}, status_code=400)
+
+
+    # ----------------------------
+    # PARSE ROW_IDs INTO COMPONENTS
+    # ----------------------------
+    parsed_rows = []
+
+    for rid in selected_row_ids:
+        parts = rid.split("_")
+
+        if analysis_type == "overall":
+            # Format: Batch_No_pos_timestamp
+            if len(parts) < 3:
+                continue
+            batch = parts[0]
+            pos = int(parts[1])
+            timestamp = "_".join(parts[2:])     # In case timestamp contains underscores
+
+            parsed_rows.append({
+                "Batch_No": batch,
+                "Phase": None,
+                "Pos": pos,
+                "Timestamp": pd.to_datetime(timestamp)
+            })
+
+        else:  # phasewise
+            # Format: Batch_No_phase_pos_timestamp
+            if len(parts) < 4:
+                continue
+            batch = parts[0]
+            phase = parts[1]
+            pos = int(parts[2])
+            timestamp = "_".join(parts[3:])
+
+            parsed_rows.append({
+                "Batch_No": batch,
+                "Phase": phase,
+                "Pos": pos,
+                "Timestamp": pd.to_datetime(timestamp)
+            })
+
+    # ----------------------------
+    # APPLY TREATMENTS
+    # ----------------------------
+
+    # Utility to select mask for a row needing treatment
+    def get_mask(row):
+        mask = (df["Batch_No"] == row["Batch_No"]) & (df["Date_time"] == row["Timestamp"])
+        if analysis_type == "phasewise" and row["Phase"]:
+            mask &= (df["Phase_name"] == row["Phase"])
+        return mask
+
+    for row in parsed_rows:
+
+        batch = row["Batch_No"]
+        ts = row["Timestamp"]
+        phase = row["Phase"]
+
+        mask = get_mask(row)
+        if mask.sum() == 0:
+            continue
+
+        # ----------------------------
+        # APPLY TREATMENT METHODS
+        # ----------------------------
+
+        # === DELETE BATCH ===
+        if method.lower() == "delete batch":
+            df = df[df["Batch_No"] != batch]
+            continue
+
+        # === DELETE ROWS ===
+        if method.lower() == "delete rows":
+            df = df[~mask]
+            continue
+
+        # === MEAN / MEDIAN IMPUTATION ===
+        if method.lower() in ["mean", "median"]:
+
+            if analysis_type == "overall":
+                series = df[df["Batch_No"] == batch][column]
+            else:
+                subset = df[(df["Batch_No"] == batch) & (df["Phase_name"] == phase)]
+                series = subset[column]
+
+            if series.dropna().empty:
+                continue
+
+            replace_val = series.mean() if method.lower() == "mean" else series.median()
+
+            df.loc[mask, column] = replace_val
+            continue
+
+        # === FORWARD FILL ===
+        if method.lower() == "forward fill":
+
+            if analysis_type == "overall":
+                subset = df[df["Batch_No"] == batch]
+            else:
+                subset = df[(df["Batch_No"] == batch) & (df["Phase_name"] == phase)]
+
+            subset = subset.sort_values("Date_time")
+
+            # value before the point
+            prev_val = subset[subset["Date_time"] < ts][column].dropna()
+            prev_val = prev_val.iloc[-1] if len(prev_val) else None
+
+            df.loc[mask, column] = prev_val
+            continue
+
+        # === BACKWARD FILL ===
+        if method.lower() == "backward fill":
+
+            if analysis_type == "overall":
+                subset = df[df["Batch_No"] == batch]
+            else:
+                subset = df[(df["Batch_No"] == batch) & (df["Phase_name"] == phase)]
+
+            subset = subset.sort_values("Date_time")
+
+            next_val = subset[subset["Date_time"] > ts][column].dropna()
+            next_val = next_val.iloc[0] if len(next_val) else None
+
+            df.loc[mask, column] = next_val
+            continue
+
+    # Update global store
+    augmented_df = df.copy()
+
+    return JSONResponse({
+        "message": "Outlier treatment applied successfully",
+        "updated_rows": selected_row_ids,
+    })
+
 
     
 @app.get("/download")
