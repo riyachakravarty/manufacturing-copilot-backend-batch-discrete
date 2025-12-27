@@ -1440,7 +1440,7 @@ def outlier_intervals_summary(
                 if is_out:
                     row = df.loc[idx]
                     summary_rows.append({
-                        "Row_ID": f"{row['Batch_No']}_{pos}_{row["Date_time"]}",
+                        "Row_ID": f"{row['Batch_No']}_{pos}_{row['Date_time']}",
                         "Batch_No": row["Batch_No"],
                         "Phase_Name": row["Phase_name"],
                         "Counter": int(pos),
@@ -1481,7 +1481,7 @@ def outlier_intervals_summary(
                 if is_out:
                     row = df.loc[idx]
                     summary_rows.append({
-                        "Row_ID": f"{row['Batch_No']}_{phase}_{pos}_{row["Date_time"]}",
+                        "Row_ID": f"{row['Batch_No']}_{phase}_{pos}_{row['Date_time']}",
                         "Batch_No": row["Batch_No"],
                         "Phase_Name": row["Phase_name"],
                         "Counter": int(pos),
