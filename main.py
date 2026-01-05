@@ -1968,15 +1968,17 @@ async def chat(request: Request):
         return JSONResponse(content={"type": "text", "data": f"Error: {e}"}, status_code=500)
 
 ########################## Exploratory data analysis tab ##########################################
-@app.post("/eda/sensor_overlays")
-def sensor_overlays(
-    target: str,
-    sensors: list[str],
-    num_ranges: float,
-    performance_direction: str,
-    aggregation: str,
+class SensorOverlayRequest(BaseModel):
+    target: str
+    sensors: list[str]
+    num_ranges: float
+    performance_direction: str
+    aggregation: str
     display_mode: str
-):
+
+
+@app.post("/eda/sensor_overlays")
+def sensor_overlays(req: SensorOverlayRequest):
     """
     Sensor overlays comparing good vs bad batches.
 
@@ -1987,6 +1989,12 @@ def sensor_overlays(
     - Display overlays over Batch or over any Phase
     - Min–Max shaded envelopes
     """
+    target = req.target
+    sensors = req.sensors
+    num_ranges = req.num_ranges
+    performance_direction = req.performance_direction
+    aggregation = req.aggregation
+    display_mode = req.display_mode
 
     global augmented_df, uploaded_df
     df = augmented_df if augmented_df is not None else uploaded_df
