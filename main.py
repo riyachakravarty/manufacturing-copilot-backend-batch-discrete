@@ -1979,16 +1979,7 @@ class SensorOverlayRequest(BaseModel):
 
 @app.post("/eda/sensor_overlays")
 def sensor_overlays(req: SensorOverlayRequest):
-    """
-    Sensor overlays comparing good vs bad batches.
 
-    Handles:
-    - BCT (Batch Cycle Time)
-    - Phase Duration (e.g., Heating Duration)
-    - Normal numeric target columns
-    - Display overlays over Batch or over any Phase
-    - Min–Max shaded envelopes
-    """
     target = req.target
     sensors = req.sensors
     num_ranges = req.num_ranges
@@ -2016,15 +2007,18 @@ def sensor_overlays(req: SensorOverlayRequest):
         # 1️⃣ Ensure Phase_name exists
         # ---------------------------------------------------
         if "Phase_name" not in df.columns:
-            print("[sensor_overlays] Creating Phase_name column...")
             df = add_phase_name_column(df)
 
         # ---------------------------------------------------
-        # 2️⃣ Create Phase_counter (Option A: resets each time phase changes)
+        # 2️⃣ Ensure Date_time is datetime
+        # ---------------------------------------------------
+        if "Date_time" in df.columns:
+            df["Date_time"] = pd.to_datetime(df["Date_time"])
+
+        # ---------------------------------------------------
+        # 3️⃣ Create Phase_counter (Option A)
         # ---------------------------------------------------
         if "Phase_counter" not in df.columns:
-            print("[sensor_overlays] Creating Phase_counter column (Option A).")
-
             df["Phase_counter"] = 0
 
             for batch, batch_df in df.groupby("Batch_No"):
@@ -2040,7 +2034,7 @@ def sensor_overlays(req: SensorOverlayRequest):
                     df.at[idx, "Phase_counter"] = counter
 
         # ---------------------------------------------------
-        # 3️⃣ Classify Good/Bad batches
+        # 4️⃣ Classify Good/Bad batches using timestamp-based durations
         # ---------------------------------------------------
         pct = num_ranges / 100.0
         target_lower = target.lower()
@@ -2049,39 +2043,43 @@ def sensor_overlays(req: SensorOverlayRequest):
         is_phase_duration = ("duration" in target_lower and not is_bct)
 
         # ---------------------------
-        # CASE A: Target = BCT
+        # CASE A — BCT (lower is better)
         # ---------------------------
         if is_bct:
-            print("Classifying batches using BCT (lower = better).")
+            print("Classifying batches using timestamp-based BCT.")
 
             batch_stats = (
-                df.groupby("Batch_No")
-                .size()
-                .reset_index(name="duration")
+                df.groupby("Batch_No")["Date_time"]
+                  .agg(lambda x: (x.max() - x.min()).total_seconds())
+                  .reset_index(name="duration")
             )
+
+            n = max(2, int(len(batch_stats) * pct))
 
             good_batches = (
                 batch_stats.sort_values("duration", ascending=True)
-                .head(int(len(batch_stats) * pct))["Batch_No"].tolist()
+                .head(n)["Batch_No"].tolist()
             )
             bad_batches = (
                 batch_stats.sort_values("duration", ascending=False)
-                .head(int(len(batch_stats) * pct))["Batch_No"].tolist()
+                .head(n)["Batch_No"].tolist()
             )
 
         # ---------------------------
-        # CASE B: Phase Duration target (e.g., Heating Duration)
+        # CASE B — Phase Duration
         # ---------------------------
         elif is_phase_duration:
-            phase = target.replace("Duration", "").strip()
-            print(f"Classifying batches using duration of phase '{phase}'.")
+            phase = target.replace("Duration", "").replace("_", "").strip()
+            print(f"Classifying using timestamp-based duration of phase '{phase}'.")
 
             phase_stats = (
                 df[df["Phase_name"] == phase]
-                .groupby("Batch_No").size()
-                .reset_index(name="duration")
+                  .groupby("Batch_No")["Date_time"]
+                  .agg(lambda x: (x.max() - x.min()).total_seconds())
+                  .reset_index(name="duration")
             )
 
+            # Include missing phases as duration 0
             all_batches = df["Batch_No"].unique()
             phase_stats = (
                 phase_stats.set_index("Batch_No")
@@ -2089,62 +2087,63 @@ def sensor_overlays(req: SensorOverlayRequest):
                 .reset_index()
             )
 
+            n = max(2, int(len(phase_stats) * pct))
+
             good_batches = (
                 phase_stats.sort_values("duration", ascending=True)
-                .head(int(len(phase_stats) * pct))["Batch_No"].tolist()
+                .head(n)["Batch_No"].tolist()
             )
             bad_batches = (
                 phase_stats.sort_values("duration", ascending=False)
-                .head(int(len(phase_stats) * pct))["Batch_No"].tolist()
+                .head(n)["Batch_No"].tolist()
             )
 
         # ---------------------------
-        # CASE C: Normal numeric target
+        # CASE C — Normal numeric target
         # ---------------------------
         else:
             print("Classifying using numeric target mean per batch.")
 
             batch_stats = df.groupby("Batch_No")[target].mean().reset_index()
+            n = max(2, int(len(batch_stats) * pct))
 
             if performance_direction == "higher":
                 good_batches = (
                     batch_stats.sort_values(target, ascending=False)
-                    .head(int(len(batch_stats) * pct))["Batch_No"].tolist()
+                    .head(n)["Batch_No"].tolist()
                 )
                 bad_batches = (
                     batch_stats.sort_values(target, ascending=True)
-                    .head(int(len(batch_stats) * pct))["Batch_No"].tolist()
+                    .head(n)["Batch_No"].tolist()
                 )
             else:
                 good_batches = (
                     batch_stats.sort_values(target, ascending=True)
-                    .head(int(len(batch_stats) * pct))["Batch_No"].tolist()
+                    .head(n)["Batch_No"].tolist()
                 )
                 bad_batches = (
                     batch_stats.sort_values(target, ascending=False)
-                    .head(int(len(batch_stats) * pct))["Batch_No"].tolist()
+                    .head(n)["Batch_No"].tolist()
                 )
 
         print("GOOD batches:", good_batches[:10])
         print("BAD batches:", bad_batches[:10])
 
         # ---------------------------------------------------
-        # 4️⃣ Aggregation function
+        # 5️⃣ Aggregation function
         # ---------------------------------------------------
         agg_func = np.mean if aggregation.lower() == "mean" else np.median
 
         # ---------------------------------------------------
-        # 5️⃣ Determine overlay length (Batch or Phase)
+        # 6️⃣ Determine overlay length
         # ---------------------------------------------------
         if display_mode == "Batch":
             counter_col = "batch_counter"
-
             max_good = df[df.Batch_No.isin(good_batches)].groupby("Batch_No").size().max()
-            max_bad  = df[df.Batch_No.isin(bad_batches)].groupby("Batch_No").size().max()
-
+            max_bad = df[df.Batch_No.isin(bad_batches)].groupby("Batch_No").size().max()
         else:
-            counter_col = "Phase_counter"
             phase = display_mode
+            counter_col = "Phase_counter"
 
             max_good = (
                 df[(df.Batch_No.isin(good_batches)) & (df.Phase_name == phase)]
@@ -2159,7 +2158,7 @@ def sensor_overlays(req: SensorOverlayRequest):
         print("Overlay length =", max_len)
 
         # ---------------------------------------------------
-        # 6️⃣ Build base Plotly figure
+        # 7️⃣ Build Plotly figure
         # ---------------------------------------------------
         fig = make_subplots(
             rows=len(sensors),
@@ -2169,108 +2168,118 @@ def sensor_overlays(req: SensorOverlayRequest):
         )
 
         # ---------------------------------------------------
-        # 7️⃣ Build overlays with min–max shading
+        # 8️⃣ Build overlays with NaN-filtered shading
         # ---------------------------------------------------
         for idx, sensor in enumerate(sensors, start=1):
 
+            # Filter rows
             if display_mode == "Batch":
                 df_good_sub = df[df.Batch_No.isin(good_batches)]
-                df_bad_sub  = df[df.Batch_No.isin(bad_batches)]
+                df_bad_sub = df[df.Batch_No.isin(bad_batches)]
             else:
-                df_good_sub = df[
-                    (df.Batch_No.isin(good_batches)) &
-                    (df.Phase_name == phase)
-                ]
-                df_bad_sub = df[
-                    (df.Batch_No.isin(bad_batches)) &
-                    (df.Phase_name == phase)
-                ]
+                df_good_sub = df[(df.Batch_No.isin(good_batches)) & (df.Phase_name == phase)]
+                df_bad_sub = df[(df.Batch_No.isin(bad_batches)) & (df.Phase_name == phase)]
 
             x_vals = list(range(1, max_len + 1))
 
-            good_profile, bad_profile = [], []
-            good_min, good_max = [], []
-            bad_min, bad_max = [], []
+            good_profile, good_min, good_max = [], [], []
+            bad_profile, bad_min, bad_max = [], [], []
 
             # Aggregate at each counter index
             for i in x_vals:
                 good_vals = df_good_sub[df_good_sub[counter_col] == i][sensor].values
-                bad_vals  = df_bad_sub[df_bad_sub[counter_col] == i][sensor].values
+                bad_vals = df_bad_sub[df_bad_sub[counter_col] == i][sensor].values
 
-                # GOOD batches
+                # GOOD
                 if len(good_vals) > 0:
                     good_profile.append(agg_func(good_vals))
-                    good_min.append(np.nanmin(good_vals))
-                    good_max.append(np.nanmax(good_vals))
+                    good_min.append(np.min(good_vals))
+                    good_max.append(np.max(good_vals))
                 else:
                     good_profile.append(np.nan)
                     good_min.append(np.nan)
                     good_max.append(np.nan)
 
-                # BAD batches
+                # BAD
                 if len(bad_vals) > 0:
                     bad_profile.append(agg_func(bad_vals))
-                    bad_min.append(np.nanmin(bad_vals))
-                    bad_max.append(np.nanmax(bad_vals))
+                    bad_min.append(np.min(bad_vals))
+                    bad_max.append(np.max(bad_vals))
                 else:
                     bad_profile.append(np.nan)
                     bad_min.append(np.nan)
                     bad_max.append(np.nan)
 
-            # ---------------------------
-            # Plot GOOD (green)
-            # ---------------------------
+            # Filter to valid shading points
+            good_valid = ~np.isnan(good_min) & ~np.isnan(good_max)
+            bad_valid = ~np.isnan(bad_min) & ~np.isnan(bad_max)
+
+            gx = np.array(x_vals)[good_valid]
+            gtop = np.array(good_max)[good_valid]
+            gbottom = np.array(good_min)[good_valid]
+
+            bx = np.array(x_vals)[bad_valid]
+            btop = np.array(bad_max)[bad_valid]
+            bbottom = np.array(bad_min)[bad_valid]
+
+            # ---------------------------------------------------
+            # Plot GOOD line
+            # ---------------------------------------------------
             fig.add_trace(
                 go.Scatter(
                     x=x_vals,
                     y=good_profile,
                     mode="lines",
                     line=dict(color="green"),
-                    name=f"{sensor} — Good"
+                    name=f"{sensor} — Good",
                 ),
                 row=idx, col=1
             )
 
-            fig.add_trace(
-                go.Scatter(
-                    x=x_vals + x_vals[::-1],
-                    y=good_max + good_min[::-1],
-                    fill="toself",
-                    fillcolor="rgba(0,255,0,0.25)",
-                    line=dict(color="rgba(0,0,0,0)"),
-                    showlegend=False
-                ),
-                row=idx, col=1
-            )
+            # GOOD shading
+            if len(gx) > 1:
+                fig.add_trace(
+                    go.Scatter(
+                        x=list(gx) + list(gx[::-1]),
+                        y=list(gtop) + list(gbottom[::-1]),
+                        fill="toself",
+                        fillcolor="rgba(0,255,0,0.25)",
+                        line=dict(color="rgba(0,0,0,0)"),
+                        showlegend=False,
+                    ),
+                    row=idx, col=1
+                )
 
-            # ---------------------------
-            # Plot BAD (red)
-            # ---------------------------
+            # ---------------------------------------------------
+            # Plot BAD line
+            # ---------------------------------------------------
             fig.add_trace(
                 go.Scatter(
                     x=x_vals,
                     y=bad_profile,
                     mode="lines",
                     line=dict(color="red"),
-                    name=f"{sensor} — Bad"
+                    name=f"{sensor} — Bad",
                 ),
                 row=idx, col=1
             )
 
-            fig.add_trace(
-                go.Scatter(
-                    x=x_vals + x_vals[::-1],
-                    y=bad_max + bad_min[::-1],
-                    fill="toself",
-                    fillcolor="rgba(255,0,0,0.25)",
-                    line=dict(color="rgba(0,0,0,0)"),
-                    showlegend=False
-                ),
-                row=idx, col=1
-            )
+            # BAD shading
+            if len(bx) > 1:
+                fig.add_trace(
+                    go.Scatter(
+                        x=list(bx) + list(bx[::-1]),
+                        y=list(btop) + list(bbottom[::-1]),
+                        fill="toself",
+                        fillcolor="rgba(255,0,0,0.25)",
+                        line=dict(color="rgba(0,0,0,0)"),
+                        showlegend=False,
+                    ),
+                    row=idx, col=1
+                )
 
         # ---------------------------------------------------
-        # 8️⃣ Final layout + return
+        # 9️⃣ Final layout + return
         # ---------------------------------------------------
         fig.update_layout(
             title_text=f"Sensor Overlays — Target: {target}, {num_ranges}% Range",
@@ -2280,10 +2289,7 @@ def sensor_overlays(req: SensorOverlayRequest):
         )
 
         fig_dict = json.loads(fig.to_json())
-        print("Total traces:", len(fig_dict.get("data", [])))
-        print("=== End Debug ===")
-
-        return JSONResponse(content={"type": "plot", "data": json.loads(fig.to_json())})
+        return JSONResponse(content={"type": "plot", "data": fig_dict})
 
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
