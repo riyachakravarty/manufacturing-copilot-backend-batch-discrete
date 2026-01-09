@@ -2565,186 +2565,272 @@ def continuous_range_analysis(req: ContinuousRangeRequest):
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 #--------------------------------------------------------------------------------------------------------#
-class MultivariateRequestWithRanges(BaseModel):
-    columns: list[str]              # selected feature columns
-    mode: str                       # "Boxplot" or "Timeseries"
-    numMultiRanges: int             # number of top and bottom ranges
-    performanceDirection: str       # "higher" or "lower"
-    target: str                     # target column
+class MultivariateRequest(BaseModel):
+    mode: str                     # "Boxplot" or "Timeseries"
+    target: str                   # target column or BCT or phase duration target
+    columns: List[str]            # list of columns for Y-axis
+    numMultiRanges: int           # percentage (e.g., 10 for 10%)
+    performanceDirection: str     # "higher" / "lower"
+    display_mode: str             # "Batch" or phase name
 
+
+# ----------------------------------------
+# Main Route
+# ----------------------------------------
 @app.post("/eda/multivariate")
-def multivariate_analysis_with_ranges(req: MultivariateRequestWithRanges):
-    """
-    Build multivariate plots using precomputed continuous ranges.
-    """
-    try:
-        global augmented_df, uploaded_df, last_continuous_ranges
-        df = augmented_df if augmented_df is not None else uploaded_df
-        if df is None:
-            return JSONResponse(content={"error": "No data uploaded"}, status_code=400)
+def multivariate_analysis(req: MultivariateRequest):
+    global uploaded_df, augmented_df
 
-        # validations
-        if req.target not in df.columns:
-            return JSONResponse(content={"error": f"Target column '{req.target}' not found"}, status_code=400)
-        if not req.columns:
-            return JSONResponse(content={"error": "No columns provided"}, status_code=400)
-        missing_cols = [c for c in req.columns if c not in df.columns]
-        if missing_cols:
-            return JSONResponse(content={"error": f"Selected columns not in dataset: {missing_cols}"}, status_code=400)
-        # Assume default time column
-        datetime_col='Date_time'
-        if datetime_col not in df.columns:
-            return JSONResponse(content={"error": f"Default time column '{datetime_col}' not found in dataset"}, status_code=400)
+    df = augmented_df if augmented_df is not None else uploaded_df
+    if df is None:
+        return JSONResponse({"error": "No data uploaded"}, status_code=400)
 
-        df = df.copy()
-        df[datetime_col] = pd.to_datetime(df[datetime_col])
+    df = df.copy()
+    df["Batch_No"] = df["Batch_No"].astype(str)
+    df["Date_time"] = pd.to_datetime(df["Date_time"], errors="coerce")
 
-        if last_continuous_ranges is None:
-            return JSONResponse(
-                content={"error": "Continuous ranges not found. Please run continuous range analysis first."},
-                status_code=400
+    # Ensure phase names exist
+    df = add_phase_name_column(df)
+
+    # Extract request inputs
+    mode = req.mode
+    target = req.target
+    columns = req.columns
+    num_ranges = req.numMultiRanges
+    performance_direction = req.performanceDirection
+    display_mode = req.display_mode
+
+    pct = num_ranges / 100.0
+    target_lower = target.lower()
+
+    # ------------------------------------------
+    # DETERMINE GOOD / BAD / NEUTRAL BATCHES
+    # ------------------------------------------
+    is_bct = (target_lower == "bct")
+    is_phase_duration = ("duration" in target_lower and not is_bct)
+
+    # ---------------- CASE A — BCT duration ----------------
+    if is_bct:
+        batch_stats = (
+            df.groupby("Batch_No")["Date_time"]
+              .agg(lambda x: (x.max() - x.min()).total_seconds())
+              .reset_index(name="duration")
         )
 
-        # --- compute median target per range ---
-        groups = []
-        for i, r in enumerate(last_continuous_ranges):
-            st = pd.to_datetime(r["start"])
-            en = pd.to_datetime(r["end"])
-            mask = (df[datetime_col] >= st) & (df[datetime_col] <= en)
-            slice_df = df.loc[mask].copy()
-            median_target = slice_df[req.target].median(skipna=True) if not slice_df.empty else np.nan
-            groups.append({
-                "group_id": i,
-                "start": st,
-                "end": en,
-                "duration_min": r.get("duration_min", float((en - st).total_seconds()/60)),
-                "median_target": float(median_target) if pd.notna(median_target) else None,
-                "df_slice": slice_df
-            })
+        # Sort from best (small duration) to worst
+        sorted_batches = batch_stats.sort_values("duration")["Batch_No"].tolist()
 
-        # filter valid groups
-        groups = [g for g in groups if g["median_target"] is not None]
-        if not groups:
-            return JSONResponse(content={"error": "No valid continuous ranges with median target found"}, status_code=400)
+        n = max(2, int(len(sorted_batches) * pct))
+        good_batches = sorted_batches[:n]
+        bad_batches = sorted_batches[-n:]
 
-        # sort by median target
-        groups_sorted = sorted(groups, key=lambda x: x["median_target"])
+    # ---------------- CASE B — Phase Duration ----------------
+    elif is_phase_duration:
+        phase_name = (
+            target.replace("Duration", "")
+                  .replace("_", "")
+                  .strip()
+        )
 
-        # select top/bottom ranges based on performance direction
-        num = max(1, req.numMultiRanges)
-        if req.performanceDirection == "higher":
-            good_groups = sorted(groups_sorted, key=lambda x: x["median_target"], reverse=True)[:num]
-            bad_groups = groups_sorted[:num]
+        phase_stats = (
+            df[df["Phase_name"] == phase_name]
+              .groupby("Batch_No")["Date_time"]
+              .agg(lambda x: (x.max() - x.min()).total_seconds())
+              .reset_index(name="duration")
+        )
+
+        # Include missing phases as duration = 0
+        all_batches = df["Batch_No"].unique()
+        phase_stats = (
+            phase_stats.set_index("Batch_No")
+                       .reindex(all_batches, fill_value=0)
+                       .reset_index()
+        )
+
+        sorted_batches = phase_stats.sort_values("duration")["Batch_No"].tolist()
+
+        n = max(2, int(len(sorted_batches) * pct))
+        good_batches = sorted_batches[:n]
+        bad_batches = sorted_batches[-n:]
+
+    # ---------------- CASE C — Numeric Target ----------------
+    else:
+        if target not in df.columns:
+            return JSONResponse({"error": f"Target '{target}' not found"}, status_code=400)
+
+        batch_stats = df.groupby("Batch_No")[target].mean().reset_index()
+        sorted_batches = (
+            batch_stats.sort_values(target, ascending=True)
+                       ["Batch_No"]
+                       .tolist()
+        )
+
+        n = max(2, int(len(sorted_batches) * pct))
+
+        if performance_direction == "higher":
+            good_batches = sorted_batches.tail(n)["Batch_No"].tolist()
+            bad_batches  = sorted_batches.head(n)["Batch_No"].tolist()
         else:
-            good_groups = groups_sorted[:num]
-            bad_groups = sorted(groups_sorted, key=lambda x: x["median_target"], reverse=True)[:num]
+            good_batches = sorted_batches.head(n)["Batch_No"].tolist()
+            bad_batches  = sorted_batches.tail(n)["Batch_No"].tolist()
 
-        good_ids = set([g["group_id"] for g in good_groups])
-        bad_ids = set([g["group_id"] for g in bad_groups])
-        selected_ids = list(good_ids.union(bad_ids))
-        sel_groups_meta = [g for g in groups_sorted if g["group_id"] in selected_ids]
-        sel_groups_meta = sorted(sel_groups_meta, key=lambda x: x["median_target"])
+    # ---------------- INCLUDE NEUTRALS ----------------
+    # Selected batches = ALL sorted batches
+    selected_batches = sorted_batches  
 
-        # labels & colors
-        def format_label(g):
-            st, en = g["start"], g["end"]
-            dur = int((en - st).total_seconds())
-            if dur >= 3600:
-                dur_label = f"{dur//3600}h{(dur%3600)//60}m"
-            elif dur >= 60:
-                dur_label = f"{dur//60}m"
-            else:
-                dur_label = f"{dur}s"
-            return f"{st.strftime('%Y-%m-%d %H:%M')} / {dur_label}"
+    df_plot = df[df["Batch_No"].isin(selected_batches)]
 
-        x_labels = [format_label(g) for g in sel_groups_meta]
-        x_group_ids = [g["group_id"] for g in sel_groups_meta]
-        classification = {}
-        for gid in x_group_ids:
-            if gid in good_ids and gid in bad_ids:
-                classification[gid] = "neutral"
-            elif gid in good_ids:
-                classification[gid] = "good"
-            elif gid in bad_ids:
-                classification[gid] = "bad"
-            else:
-                classification[gid] = "neutral"
-        color_map = {"good": "green", "bad": "red", "neutral": "gray"}
-        gid_to_slice = {g["group_id"]: g["df_slice"] for g in sel_groups_meta}
+    # ---------------- Color Logic ----------------
+    def batch_color(batch):
+        if batch in good_batches:
+            return "green"
+        if batch in bad_batches:
+            return "red"
+        return "grey"  # NEUTRAL batches
 
-        # --- build subplots ---
-        n_rows = 1 + len(req.columns)
-        subplot_titles = ["Target: " + req.target] + req.columns
-        fig = make_subplots(rows=n_rows, cols=1, shared_xaxes=True,
-                            vertical_spacing=0.06, subplot_titles=subplot_titles)
+    # -------------------------------------------
+    # BOX PLOT MODE
+    # -------------------------------------------
+    if mode == "Boxplot":
 
-        if req.mode.lower().startswith("box"):
-            for row_idx, col in enumerate([req.target] + req.columns, start=1):
-                for gid, xlab in zip(x_group_ids, x_labels):
-                    slice_df = gid_to_slice.get(gid)
-                    if slice_df is None or slice_df.empty or col not in slice_df.columns:
+        rows = len(columns)
+        fig = make_subplots(
+            rows=rows,
+            cols=1,
+            shared_xaxes=False,
+            vertical_spacing=0.07,
+            subplot_titles=[f"{col} Distribution" for col in columns]
+        )
+
+        r = 1
+        for col in columns:
+
+            if display_mode == "Batch":
+                for batch in selected_batches:
+                    bdf = df_plot[df_plot["Batch_No"] == batch]
+                    if bdf.empty:
                         continue
-                    y = slice_df[col].dropna().values
-                    if len(y) == 0:
-                        continue
+
                     fig.add_trace(
                         go.Box(
-                            y=y,
-                            x=[xlab] * len(y),
-                            name=str(xlab),
-                            marker=dict(color=color_map.get(classification.get(gid, "neutral"))),
-                            boxmean=True,
-                            showlegend=False
+                            y=bdf[col],
+                            name=batch,
+                            marker_color=batch_color(batch)
                         ),
-                        row=row_idx, col=1
+                        row=r,
+                        col=1
                     )
-        elif req.mode.lower().startswith("time"):
-            for row_idx, col in enumerate([req.target] + req.columns, start=1):
-                for gid in x_group_ids:
-                    slice_df = gid_to_slice.get(gid)
-                    if slice_df is None or slice_df.empty or col not in slice_df.columns:
-                        continue
-                    # Ensure sorted by datetime
-                    slice_df = slice_df.sort_values(by=datetime_col)
-                    x_series = slice_df[datetime_col].tolist()
-                    y_series = slice_df[col].tolist()
 
-                    if len(x_series) == 0:
+            else:
+                phase = display_mode
+                for batch in selected_batches:
+                    bdf = df_plot[
+                        (df_plot["Batch_No"] == batch) &
+                        (df_plot["Phase_name"] == phase)
+                    ]
+
+                    if bdf.empty:
                         continue
-                    
+
                     fig.add_trace(
-                        go.Scatter(
-                            x=x_series,
-                            y=y_series,
-                            mode="lines+markers",
-                            name=col,
-                            marker=dict(color=color_map.get(classification.get(gid, "neutral"))),
-                            showlegend=False
+                        go.Box(
+                            y=bdf[col],
+                            name=batch,
+                            marker_color=batch_color(batch)
                         ),
-                        row=row_idx, col=1
+                        row=r,
+                        col=1
                     )
-        else:
-            return JSONResponse(content={"error": f"Unsupported mode '{req.mode}'"}, status_code=400)
 
-        fig.update_layout(height=220*n_rows, margin=dict(t=70, b=120, l=80, r=20))
-        fig.update_xaxes(tickangle=-45)
+            r += 1
 
-        return JSONResponse(content={
+        fig.update_layout(height=350 * rows, width=1000, template="plotly_white")
+
+        return JSONResponse({
             "type": "plot",
             "data": json.loads(fig.to_json()),
-            "groups": [
-                {
-                    "group_id": g["group_id"],
-                    "start": g["start"].isoformat(),
-                    "end": g["end"].isoformat(),
-                    "duration_min": g["duration_min"],
-                    "median_target": g["median_target"]
-                } for g in sel_groups_meta
-            ]
+            "groups": {
+                "good": good_batches,
+                "bad": bad_batches,
+                "neutral": [b for b in selected_batches if b not in good_batches + bad_batches]
+            }
         })
 
-    except Exception as e:
-        return JSONResponse(content={"error": str(e)}, status_code=500)
+    # -------------------------------------------
+    # TIMESERIES MODE
+    # -------------------------------------------
+    elif mode == "Timeseries":
+
+        rows = len(columns)
+        fig = make_subplots(
+            rows=rows,
+            cols=1,
+            shared_xaxes=False,
+            vertical_spacing=0.07,
+            subplot_titles=[f"{col} Timeseries" for col in columns]
+        )
+
+        r = 1
+        for col in columns:
+
+            if display_mode == "Batch":
+                for batch in selected_batches:
+                    bdf = df_plot[df_plot["Batch_No"] == batch]
+
+                    if bdf.empty:
+                        continue
+
+                    fig.add_trace(
+                        go.Scatter(
+                            x=bdf["Date_time"],
+                            y=bdf[col],
+                            mode="lines",
+                            name=batch,
+                            line=dict(color=batch_color(batch))
+                        ),
+                        row=r,
+                        col=1
+                    )
+
+            else:
+                phase = display_mode
+
+                for batch in selected_batches:
+                    bdf = df_plot[
+                        (df_plot["Batch_No"] == batch) &
+                        (df_plot["Phase_name"] == phase)
+                    ]
+
+                    if bdf.empty:
+                        continue
+
+                    fig.add_trace(
+                        go.Scatter(
+                            x=bdf["Date_time"],
+                            y=bdf[col],
+                            mode="lines",
+                            name=batch,
+                            line=dict(color=batch_color(batch))
+                        ),
+                        row=r,
+                        col=1
+                    )
+
+            r += 1
+
+        fig.update_layout(height=350 * rows, width=1000, template="plotly_white")
+
+        return JSONResponse({
+            "type": "plot",
+            "data": json.loads(fig.to_json()),
+            "groups": {
+                "good": good_batches,
+                "bad": bad_batches,
+                "neutral": [b for b in selected_batches if b not in good_batches + bad_batches]
+            }
+        })
+
+    return JSONResponse({"error": "Invalid mode. Use 'Boxplot' or 'Timeseries'."}, status_code=400)
 
 #######################################----Feature Engineering tab-------------###########################
 @app.get("/get_augmented_df_columns")
